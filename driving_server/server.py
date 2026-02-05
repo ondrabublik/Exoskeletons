@@ -21,6 +21,41 @@ POSSIBLE_MODEL_PATHS = [
 HOST = "0.0.0.0"  # Naslouchá na všech rozhraních
 PORT = 8888
 
+def get_local_ip():
+    """Získá lokální IP adresu počítače"""
+    try:
+        # Vytvoříme dočasný socket pro zjištění IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Nepřipojujeme se, jen zjistíme IP pomocí připojení k externí adrese
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        # Fallback: zkusíme získat IP z hostname
+        try:
+            hostname = socket.gethostname()
+            ip = socket.gethostbyname(hostname)
+            return ip
+        except Exception:
+            return "127.0.0.1"
+
+def get_all_ips():
+    """Získá všechny IP adresy počítače"""
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        # Získáme všechny IP adresy
+        for info in socket.getaddrinfo(hostname, None):
+            ip = info[4][0]
+            # Filtrujeme pouze IPv4 adresy (ne IPv6)
+            if ':' not in ip and ip != '127.0.0.1':
+                if ip not in ips:
+                    ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
 def load_model_and_scaler():
     """Načte scaler a LSTM model"""
     print(f"Načítám scaler z: {SCALER_PATH}")
@@ -89,13 +124,27 @@ def main():
         print(f"Chyba při načítání modelu nebo scaleru: {e}")
         sys.exit(1)
     
+    # Získání IP adres
+    local_ip = get_local_ip()
+    all_ips = get_all_ips()
+    
     # Vytvoření UDP socketu
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
     try:
         sock.bind((HOST, PORT))
-        print(f"UDP server naslouchá na {HOST}:{PORT}")
-        print("Čekám na data...")
+        print("=" * 60)
+        print("UDP SERVER SPUŠTĚN")
+        print("=" * 60)
+        print(f"Server naslouchá na: {HOST}:{PORT}")
+        print(f"\nHlavní IP adresa serveru: {local_ip}")
+        if all_ips:
+            print(f"Všechny dostupné IP adresy:")
+            for ip in all_ips:
+                print(f"  - {ip}:{PORT}")
+        print(f"\nPro připojení Wemos použijte IP adresu: {local_ip}")
+        print("=" * 60)
+        print("Čekám na data...\n")
         
         while True:
             # Příjem dat
