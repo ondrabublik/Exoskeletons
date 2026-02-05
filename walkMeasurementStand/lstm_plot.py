@@ -7,12 +7,17 @@ import matplotlib.pyplot as plt
 # 1) Načtení scaleru a modelu
 # ===============================
 scaler = joblib.load("scaler.save")
-model = tf.keras.models.load_model("lstm_model.h5")
+model = tf.keras.models.load_model("lstm_model_v2.h5")
 
 # ===============================
 # 2) Načtení dat
 # ===============================
-data = np.loadtxt("data/XXPVYLBK.TXT", delimiter=",")
+# data = np.loadtxt("data/DJYZLQAB.TXT", delimiter=",")
+# data = np.loadtxt("data/KQNVDOFY.TXT", delimiter=",")
+data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
+# data = np.loadtxt("data/RPAPAMEO.TXT", delimiter=",")
+# data = np.loadtxt("data/WVZRLCYU.TXT", delimiter=",")
+# data = np.loadtxt("data/XXPVYLBK.TXT", delimiter=",")
 
 X = data[:, :7]          # vstupy
 y = data[:, 7].astype(int)
@@ -60,8 +65,8 @@ for i in range(num_signals):
 
 # --- 8. subplot: skutečný vs. predikovaný výstup ---
 plt.subplot(num_signals + 1, 1, num_signals + 1)
-plt.plot(y, "k.-", label="Skutečný výstup (y)")     # černě
-plt.plot(y_pred, "r.--", label="Predikce (červeně)")  # červeně
+plt.plot(y, "k", label="Skutečný výstup (y)")     # černě
+plt.plot(y_pred, "r.", label="Predikce (červeně)")  # červeně
 plt.ylabel("Výstup")
 plt.xlabel("Index vzorku")
 plt.grid(True)
