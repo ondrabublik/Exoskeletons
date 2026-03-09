@@ -14,8 +14,13 @@ const int localPort = 8889;
 
 WiFiUDP Udp;
 
-Adafruit_MPU6050 mpu;
-Madgwick filter;
+// dva senzory
+Adafruit_MPU6050 mpu1;
+Adafruit_MPU6050 mpu2;
+
+// dva filtry
+Madgwick filter1;
+Madgwick filter2;
 
 // frekvence IMU
 const float imuFreq = 250.0;
@@ -50,15 +55,23 @@ void setup() {
 
   Wire.begin();
 
-  if (!mpu.begin()) {
-    Serial.println("MPU6050 nenalezen!");
-    while (1);
+  // inicializace prvního senzoru (0x68)
+  if (!mpu1.begin(0x68)) {
+    Serial.println("MPU1 nenalezen!");
+    //while (1);
   }
 
-  Serial.println("MPU6050 inicializován");
+  // inicializace druhého senzoru (0x69)
+  if (!mpu2.begin(0x69)) {
+    Serial.println("MPU2 nenalezen!");
+    //while (1);
+  }
 
-  // Madgwick filtr
-  filter.begin(imuFreq);
+  Serial.println("MPU6050 senzory inicializovány");
+
+  // Madgwick filtry
+  filter1.begin(imuFreq);
+  filter2.begin(imuFreq);
 
   Udp.begin(localPort);
 
@@ -73,21 +86,39 @@ void loop() {
 
     lastIMUTime += imuPeriod;
 
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
+    // data ze senzorů
+    sensors_event_t a1, g1, t1;
+    sensors_event_t a2, g2, t2;
 
-    // rad/s -> deg/s
-    float gx = g.gyro.x * 57.2958;
-    float gy = g.gyro.y * 57.2958;
-    float gz = g.gyro.z * 57.2958;
+    mpu1.getEvent(&a1, &g1, &t1);
+    mpu2.getEvent(&a2, &g2, &t2);
 
-    filter.updateIMU(
-      gx,
-      gy,
-      gz,
-      a.acceleration.x,
-      a.acceleration.y,
-      a.acceleration.z
+    // převod rad/s -> deg/s
+    float gx1 = g1.gyro.x * 57.2958;
+    float gy1 = g1.gyro.y * 57.2958;
+    float gz1 = g1.gyro.z * 57.2958;
+
+    float gx2 = g2.gyro.x * 57.2958;
+    float gy2 = g2.gyro.y * 57.2958;
+    float gz2 = g2.gyro.z * 57.2958;
+
+    // aktualizace filtrů
+    filter1.updateIMU(
+      gx1,
+      gy1,
+      gz1,
+      a1.acceleration.x,
+      a1.acceleration.y,
+      a1.acceleration.z
+    );
+
+    filter2.updateIMU(
+      gx2,
+      gy2,
+      gz2,
+      a2.acceleration.x,
+      a2.acceleration.y,
+      a2.acceleration.z
     );
 
     readCount++;
@@ -96,23 +127,26 @@ void loop() {
 
       readCount = 0;
 
-      float roll  = filter.getRoll();
-      float pitch = filter.getPitch();
-      float yaw   = filter.getYaw();
+      float roll1  = filter1.getRoll();
+      float pitch1 = filter1.getPitch();
+      float yaw1   = filter1.getYaw();
 
-      char dataString[128];
+      float roll2  = filter2.getRoll();
+      float pitch2 = filter2.getPitch();
+      float yaw2   = filter2.getYaw();
+
+      char dataString[160];
 
       snprintf(
         dataString,
         sizeof(dataString),
-        "%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f",
-        roll,
-        pitch,
-        yaw,
-        gx,
-        gy,
-        gz,
-        0.0
+        "%.4f, %.4f, %.4f, %.4f, %.4f, %.4f",
+        roll1,
+        pitch1,
+        yaw1,
+        roll2,
+        pitch2,
+        yaw2
       );
 
       Serial.print("Odesílám: ");
