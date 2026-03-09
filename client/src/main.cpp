@@ -12,6 +12,9 @@ const char* serverIP = "172.29.5.235";
 const int serverPort = 8888;
 const int localPort = 8889;
 
+// pin potenciometru
+const int POT_PIN = A0;
+
 WiFiUDP Udp;
 
 // dva senzory
@@ -30,7 +33,7 @@ unsigned long lastIMUTime = 0;
 
 // odesílání UDP
 int readCount = 0;
-const int sendDivider = 10;
+const int sendDivider = 25;
 
 void setup() {
 
@@ -127,26 +130,28 @@ void loop() {
 
       readCount = 0;
 
+      // čtení potenciometru
+      float pot = analogRead(POT_PIN) / 1024.0;
+
       float roll1  = filter1.getRoll();
       float pitch1 = filter1.getPitch();
-      float yaw1   = filter1.getYaw();
 
       float roll2  = filter2.getRoll();
       float pitch2 = filter2.getPitch();
-      float yaw2   = filter2.getYaw();
 
-      char dataString[160];
+      char dataString[200];
 
       snprintf(
         dataString,
         sizeof(dataString),
-        "%.4f, %.4f, %.4f, %.4f, %.4f, %.4f",
+        "%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f",
+        pot,
         roll1,
         pitch1,
-        yaw1,
+        gz1,
         roll2,
         pitch2,
-        yaw2
+        gz2
       );
 
       Serial.print("Odesílám: ");
