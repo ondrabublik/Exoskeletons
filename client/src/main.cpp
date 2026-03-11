@@ -141,12 +141,8 @@ void loop() {
       float roll2  = filter2.getRoll();
       float pitch2 = filter2.getPitch();
 
-      char dataString[200];
-
-      snprintf(
-        dataString,
-        sizeof(dataString),
-        "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
+      // 7 hodnot pro binární packet float[7]
+      float dataPayload[7] = {
         potValue,
         roll1,
         pitch1,
@@ -154,12 +150,16 @@ void loop() {
         roll2,
         pitch2,
         gx2
-      );
+      };
 
-      Serial.println(dataString);
+      // Debug: vypíšeme data do seriálu
+      Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+                    dataPayload[0], dataPayload[1], dataPayload[2],
+                    dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
 
+      // Odeslat binární data
       Udp.beginPacket(serverIP, serverPort);
-      Udp.write((uint8_t*)dataString, strlen(dataString));
+      Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
       Udp.endPacket();
 
       // čtení odpovědi (neblokující)
@@ -173,8 +173,8 @@ void loop() {
 
         if (len > 0) incomingPacket[len] = 0;
 
-        Serial.print("Odpověď: ");
-        Serial.println(incomingPacket);
+        //Serial.print("Odpověď: ");
+        //Serial.println(incomingPacket);
       }
     }
   }

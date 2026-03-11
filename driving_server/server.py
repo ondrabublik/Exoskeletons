@@ -1,4 +1,5 @@
 import socket
+import struct
 import numpy as np
 import tensorflow as tf
 import joblib
@@ -77,43 +78,59 @@ def load_model_and_scaler():
     print("Model a scaler úspěšně načteny!")
     return scaler, model
 
-def process_data(data_line, scaler, model):
+def process_data(values, scaler, model):
     """
-    Zpracuje jeden řádek dat a vrátí predikci
-    
+    Zpracuje seznam 7 hodnot float a vrátí predikci.
+
     Args:
-        data_line: řetězec s 7-8 hodnotami oddělenými čárkami
+        values: seznam (nebo iterovatelný) s alespoň 7 float hodnotami
         scaler: načtený StandardScaler
         model: načtený LSTM model
-    
+
     Returns:
         tuple: (predikce_binární, pravděpodobnost)
     """
     try:
-        # Parsování dat (očekáváme 7 hodnot, ale může být i 8)
-        values = [float(x.strip()) for x in data_line.split(",")]
-        
-        # Vezmeme pouze prvních 7 hodnot (vstupy)
         if len(values) < 7:
             raise ValueError(f"Očekáváno alespoň 7 hodnot, obdrženo {len(values)}")
-        
-        X = np.array([values[:7]])  # tvar (1, 7)
-        
+
+        X = np.array([values[:7]], dtype=np.float32)  # tvar (1, 7)
+
         # Normalizace
         X_scaled = scaler.transform(X)
-        
+
         # Úprava tvaru pro LSTM: (samples, timesteps, features) = (1, 7, 1)
         X_lstm = X_scaled.reshape(-1, 7, 1)
-        
+
         # Predikce
         y_pred_prob = model.predict(X_lstm, verbose=0).ravel()[0]
         y_pred = 1 if y_pred_prob >= 0.5 else 0
-        
+
         return y_pred, y_pred_prob
-        
+
     except Exception as e:
         print(f"Chyba při zpracování dat: {e}")
         raise
+
+def parse_sensor_packet(data):
+    """Převede příchozí UDP packet na list 7 float hodnot."""
+    if isinstance(data, (bytes, bytearray)) and len(data) == 7 * 4:
+        try:
+            values = list(struct.unpack('<7f', data))
+            return values
+        except struct.error:
+            raise ValueError("Binární packet nelze rozparsovat")
+
+    # Fallback na textový CSV formát
+    try:
+        text = data.decode('utf-8').strip()
+        values = [float(x.strip()) for x in text.split(',') if x.strip() != '']
+        if len(values) >= 7:
+            return values[:7]
+        raise ValueError(f"Nedostatečný počet hodnot ve CSV: {len(values)}")
+    except Exception as e:
+        raise ValueError(f"Neplatný packet: {e}")
+
 
 def main():
     """Hlavní funkce UDP serveru"""
@@ -151,20 +168,19 @@ def main():
             data, addr = sock.recvfrom(1024)  # buffer 1024 bytů
             
             try:
-                # Dekódování dat
-                data_str = data.decode('utf-8').strip()
-                print(f"Přijato od {addr}: {data_str}")
-                
+                values = parse_sensor_packet(data)
+                print(f"Přijato od {addr}: {values}")
+
                 # Zpracování dat neuronovou sítí
-                y_pred, y_pred_prob = process_data(data_str, scaler, model)
-                
+                y_pred, y_pred_prob = process_data(values, scaler, model)
+
                 # Vytvoření odpovědi (binární predikce a pravděpodobnost)
                 response = f"{y_pred},{y_pred_prob:.6f}"
-                
+
                 # Odeslání odpovědi zpět
                 sock.sendto(response.encode('utf-8'), addr)
                 print(f"Odeslána odpověď: {response}")
-                
+
             except Exception as e:
                 error_msg = f"ERROR: {str(e)}"
                 print(f"Chyba: {error_msg}")

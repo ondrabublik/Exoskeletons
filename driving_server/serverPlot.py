@@ -1,4 +1,5 @@
 import socket
+import struct
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Použití non-GUI backend
@@ -70,6 +71,24 @@ def get_all_ips():
         pass
     return ips
 
+
+def parse_sensor_packet(data):
+    if isinstance(data, (bytes, bytearray)) and len(data) == 7 * 4:
+        try:
+            return list(struct.unpack('<7f', data))
+        except struct.error:
+            raise ValueError("Binární packet nelze rozparsovat")
+
+    try:
+        text = data.decode('utf-8').strip()
+        values = [float(x.strip()) for x in text.split(',') if x.strip() != '']
+        if len(values) >= 7:
+            return values[:7]
+        raise ValueError(f"Nedostatečný počet hodnot ve CSV: {len(values)}")
+    except Exception as e:
+        raise ValueError(f"Neplatný packet: {e}")
+
+
 def udp_listener():
     """Funkce pro naslouchání UDP paketům"""
     # Vytvoření UDP socketu
@@ -102,28 +121,20 @@ def udp_listener():
             data, addr = sock.recvfrom(1024)  # buffer 1024 bytů
             
             try:
-                # Dekódování dat
-                data_str = data.decode('utf-8').strip()
-                print(f"Přijato od {addr}: {data_str}")
-                
-                # Parsování dat
-                values = [float(x.strip()) for x in data_str.split(",")]
-                
-                # Vezmeme pouze prvních 7 hodnot
-                if len(values) >= 7:
-                    sensor_data = values[:7]
-                    # Přidání timestamp
-                    timestamp = time.time()
-                    data_queue.put((timestamp, sensor_data))
-                    
-                    # Signalizace nových dat pro SSE
-                    update_event.set()
-                    
-                    # Odeslání potvrzení
-                    response = "OK"
-                    sock.sendto(response.encode('utf-8'), addr)
-                else:
-                    print(f"Nedostatečný počet hodnot: {len(values)}")
+                values = parse_sensor_packet(data)
+                print(f"Přijato od {addr}: {values}")
+
+                sensor_data = values[:7]
+                # Přidání timestamp
+                timestamp = time.time()
+                data_queue.put((timestamp, sensor_data))
+
+                # Signalizace nových dat pro SSE
+                update_event.set()
+
+                # Odeslání potvrzení
+                response = "OK"
+                sock.sendto(response.encode('utf-8'), addr)
                     
             except Exception as e:
                 error_msg = f"ERROR: {str(e)}"
