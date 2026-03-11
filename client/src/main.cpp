@@ -8,7 +8,7 @@
 const char* ssid = "hpwifi";
 const char* password = "password";
 
-const char* serverIP = "172.29.5.235";
+const char* serverIP = "192.168.0.141";
 const int serverPort = 8888;
 const int localPort = 8889;
 
@@ -26,18 +26,21 @@ Madgwick filter1;
 Madgwick filter2;
 
 // frekvence IMU
-const float imuFreq = 250.0;
+const float imuFreq = 50.0;
 const unsigned long imuPeriod = 1000000 / imuFreq;
 
 unsigned long lastIMUTime = 0;
 
 // odesílání UDP
 int readCount = 0;
-const int sendDivider = 25;
+const int sendDivider = 10;
+
+float potValue = 0;
 
 void setup() {
 
   Serial.begin(115200);
+  delay(1000);
 
   Serial.println();
   Serial.print("Připojování k WiFi: ");
@@ -57,17 +60,16 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   Wire.begin();
+  Wire.setClock(400000);   // rychlejší I2C
 
   // inicializace prvního senzoru (0x68)
   if (!mpu1.begin(0x68)) {
     Serial.println("MPU1 nenalezen!");
-    //while (1);
   }
 
   // inicializace druhého senzoru (0x69)
   if (!mpu2.begin(0x69)) {
     Serial.println("MPU2 nenalezen!");
-    //while (1);
   }
 
   Serial.println("MPU6050 senzory inicializovány");
@@ -83,11 +85,14 @@ void setup() {
 
 void loop() {
 
+  // čtení potenciometru mimo IMU cyklus
+  potValue = analogRead(POT_PIN) / 1024.0;
+
   unsigned long now = micros();
 
   if (now - lastIMUTime >= imuPeriod) {
 
-    lastIMUTime += imuPeriod;
+    lastIMUTime = now;
 
     // data ze senzorů
     sensors_event_t a1, g1, t1;
@@ -130,9 +135,6 @@ void loop() {
 
       readCount = 0;
 
-      // čtení potenciometru
-      float pot = analogRead(POT_PIN) / 1024.0;
-
       float roll1  = filter1.getRoll();
       float pitch1 = filter1.getPitch();
 
@@ -144,28 +146,29 @@ void loop() {
       snprintf(
         dataString,
         sizeof(dataString),
-        "%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f",
-        pot,
+        "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f",
+        potValue,
         roll1,
         pitch1,
-        gz1,
+        gx1,
         roll2,
         pitch2,
-        gz2
+        gx2
       );
 
-      Serial.print("Odesílám: ");
       Serial.println(dataString);
 
       Udp.beginPacket(serverIP, serverPort);
       Udp.write((uint8_t*)dataString, strlen(dataString));
       Udp.endPacket();
 
+      // čtení odpovědi (neblokující)
       int packetSize = Udp.parsePacket();
 
       if (packetSize) {
 
         char incomingPacket[255];
+
         int len = Udp.read(incomingPacket, 255);
 
         if (len > 0) incomingPacket[len] = 0;
@@ -175,4 +178,6 @@ void loop() {
       }
     }
   }
+
+  yield(); // důležité pro ESP8266 watchdog
 }
