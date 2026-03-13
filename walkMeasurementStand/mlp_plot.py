@@ -1,13 +1,46 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
+from scipy import ndimage
+
+def filter_short_pulses(predictions, min_duration_samples=10, min_gap_samples=5):
+    """Odstraní krátké impulsy kratší než min_duration_samples"""
+    # 1. Odstraň krátké zapnutí (původní logika)
+    labeled, num_features = ndimage.label(predictions)
+    filtered = predictions.copy()
+    
+    for i in range(1, num_features + 1):
+        component = labeled == i
+        if component.sum() < min_duration_samples:
+            filtered[component] = 0
+    
+    # 2. Odstraň krátké mezery (invertuj, filtruj, invertuj zpět)
+    inverted = 1 - filtered
+    labeled_gaps, num_gaps = ndimage.label(inverted)
+    
+    for i in range(1, num_gaps + 1):
+        component = labeled_gaps == i
+        if component.sum() < min_gap_samples:
+            filtered[component] = 1  # krátkou mezeru "přemostí" na 1
+    
+    return filtered
 
 # ===============================
 # 1) Načtení dat
 # ===============================
-data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
+# XXPVYLBK nepotřebujeme
+# WVZRLCYU nepotřebujeme
+# RPAPAMEO je fajn
+# KSTHKRWQ je fajn
+# KQNVDOFY nepotřebujeme
+# DJYZLQAB je fajn
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, "data", "DJYZLQAB.TXT")
+data = np.loadtxt(data_path, delimiter=",")
+#data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
 
 X = data[:, :7]    # 7 vstupních signálů
 y = data[:, 7]     # výstup 0/1
@@ -44,7 +77,7 @@ model.compile(
     metrics=["accuracy"]
 )
 
-model.fit(X_train, y_train, epochs=150, verbose=0)
+model.fit(X_train, y_train, epochs=10, verbose=0)
 
 # ===============================
 # 5) Predikce na trénovacích datech
@@ -52,8 +85,11 @@ model.fit(X_train, y_train, epochs=150, verbose=0)
 y_pred_prob = model.predict(X_scaled).ravel()
 y_pred = (y_pred_prob >= 0.5).astype(int)
 
+# Odstranění krátkých impulsů z predikce
+y_pred_filtered = filter_short_pulses(y_pred, min_duration_samples=10, min_gap_samples=10)
+
 print("\n=== Predikce modelu ===")
-print(y_pred)
+print(y_pred_filtered)
 
 # ===============================
 # 6) Vykreslení subplotů
@@ -72,7 +108,7 @@ for i in range(num_signals):
 # --- 8. subplot: skutečný vs. predikovaný výstup ---
 plt.subplot(num_signals + 1, 1, num_signals + 1)
 plt.plot(y, "k.-", label="Skutečný výstup (y)")     # černě
-plt.plot(y_pred, "r.--", label="Predikce (červeně)")  # červeně
+plt.plot(y_pred_filtered, "r.--", label="Predikce (červeně)")  # červeně
 plt.ylabel("Výstup")
 plt.xlabel("Index vzorku")
 plt.grid(True)
