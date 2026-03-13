@@ -1,105 +1,183 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <MadgwickAHRS.h>
 
-// ====== WiFi nastavení ======
 const char* ssid = "hpwifi";
 const char* password = "password";
 
-// ====== UDP server nastavení ======
-const char* serverIP = "172.29.6.137";  // IP adresa počítače se serverem
+const char* serverIP = "192.168.0.141";
 const int serverPort = 8888;
-const int localPort = 8889;  // Lokální port pro příjem odpovědí
+const int localPort = 8889;
+
+// pin potenciometru
+const int POT_PIN = A0;
 
 WiFiUDP Udp;
 
-// ====== Simulace dat ze senzorů ======
-// Nahraďte tuto funkci čtením z vašich skutečných senzorů
-void readSensorData(float* data) {
-  // Příklad: simulace 7 hodnot
-  // V reálném použití zde načtete data z IMU, akcelerometru, gyroskopu, atd.
-  data[0] = 15.76;
-  data[1] = -0.9612;
-  data[2] = 0.1213;
-  data[3] = 0.0205;
-  data[4] = -4.4122;
-  data[5] = -1.5725;
-  data[6] = -2.1527;
-  
-  // Případně můžete použít skutečné senzory:
-  // data[0] = analogRead(A0) * 3.3 / 1024.0;
-  // atd.
-}
+// dva senzory
+Adafruit_MPU6050 mpu1;
+Adafruit_MPU6050 mpu2;
+
+// dva filtry
+Madgwick filter1;
+Madgwick filter2;
+
+// frekvence IMU
+const float imuFreq = 50.0;
+const unsigned long imuPeriod = 1000000 / imuFreq;
+
+unsigned long lastIMUTime = 0;
+
+// odesílání UDP
+int readCount = 0;
+const int sendDivider = 10;
+
+float potValue = 0;
 
 void setup() {
+
   Serial.begin(115200);
-  delay(100);
-  
+  delay(1000);
+
   Serial.println();
   Serial.print("Připojování k WiFi: ");
   Serial.println(ssid);
-  
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  
+
   Serial.println();
   Serial.println("WiFi připojeno!");
   Serial.print("IP adresa: ");
   Serial.println(WiFi.localIP());
-  
-  // Spuštění UDP
+
+  Wire.begin();
+  Wire.setClock(400000);   // rychlejší I2C
+
+  // inicializace prvního senzoru (0x68)
+  if (!mpu1.begin(0x68)) {
+    Serial.println("MPU1 nenalezen!");
+  }
+
+  // inicializace druhého senzoru (0x69)
+  if (!mpu2.begin(0x69)) {
+    Serial.println("MPU2 nenalezen!");
+  }
+
+  Serial.println("MPU6050 senzory inicializovány");
+
+  // Madgwick filtry
+  filter1.begin(imuFreq);
+  filter2.begin(imuFreq);
+
   Udp.begin(localPort);
-  Serial.print("UDP server spuštěn na portu: ");
-  Serial.println(localPort);
-  Serial.print("Odesílám data na: ");
-  Serial.print(serverIP);
-  Serial.print(":");
-  Serial.println(serverPort);
+
+  Serial.println("UDP inicializováno");
 }
 
 void loop() {
-  float sensorData[7];
-  
-  // Načtení dat ze senzorů
-  readSensorData(sensorData);
-  
-  // Vytvoření řetězce ve formátu: "val1, val2, val3, val4, val5, val6, val7"
-  String dataString = "";
-  for (int i = 0; i < 7; i++) {
-    if (i > 0) dataString += ", ";
-    dataString += String(sensorData[i], 4);  // 4 desetinná místa
-  }
-  
-  Serial.print("Odesílám data: ");
-  Serial.println(dataString);
-  
-  // Odeslání dat přes UDP
-  Udp.beginPacket(serverIP, serverPort);
-  Udp.write(dataString.c_str());
-  Udp.endPacket();
-  
-  // Čekání na odpověď (volitelné)
-  delay(100);  // Krátká pauza pro příjem odpovědi
-  
-  int packetSize = Udp.parsePacket();
-  if (packetSize) {
-    char incomingPacket[255];
-    int len = Udp.read(incomingPacket, 255);
-    if (len > 0) {
-      incomingPacket[len] = 0;
+
+  // čtení potenciometru mimo IMU cyklus
+  potValue = analogRead(POT_PIN) / 1024.0;
+
+  unsigned long now = micros();
+
+  if (now - lastIMUTime >= imuPeriod) {
+
+    lastIMUTime = now;
+
+    // data ze senzorů
+    sensors_event_t a1, g1, t1;
+    sensors_event_t a2, g2, t2;
+
+    mpu1.getEvent(&a1, &g1, &t1);
+    mpu2.getEvent(&a2, &g2, &t2);
+
+    // převod rad/s -> deg/s
+    float gx1 = g1.gyro.x * 57.2958;
+    float gy1 = g1.gyro.y * 57.2958;
+    float gz1 = g1.gyro.z * 57.2958;
+
+    float gx2 = g2.gyro.x * 57.2958;
+    float gy2 = g2.gyro.y * 57.2958;
+    float gz2 = g2.gyro.z * 57.2958;
+
+    // aktualizace filtrů
+    filter1.updateIMU(
+      gx1,
+      gy1,
+      gz1,
+      a1.acceleration.x,
+      a1.acceleration.y,
+      a1.acceleration.z
+    );
+
+    filter2.updateIMU(
+      gx2,
+      gy2,
+      gz2,
+      a2.acceleration.x,
+      a2.acceleration.y,
+      a2.acceleration.z
+    );
+
+    readCount++;
+
+    if (readCount >= sendDivider) {
+
+      readCount = 0;
+
+      float roll1  = filter1.getRoll();
+      float pitch1 = filter1.getPitch();
+
+      float roll2  = filter2.getRoll();
+      float pitch2 = filter2.getPitch();
+
+      // 7 hodnot pro binární packet float[7]
+      float dataPayload[7] = {
+        potValue,
+        roll1,
+        pitch1,
+        gx1,
+        roll2,
+        pitch2,
+        gx2
+      };
+
+      // Debug: vypíšeme data do seriálu
+      Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+                    dataPayload[0], dataPayload[1], dataPayload[2],
+                    dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
+
+      // Odeslat binární data
+      Udp.beginPacket(serverIP, serverPort);
+      Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
+      Udp.endPacket();
+
+      // čtení odpovědi (neblokující)
+      int packetSize = Udp.parsePacket();
+
+      if (packetSize) {
+
+        char incomingPacket[255];
+
+        int len = Udp.read(incomingPacket, 255);
+
+        if (len > 0) incomingPacket[len] = 0;
+
+        //Serial.print("Odpověď: ");
+        //Serial.println(incomingPacket);
+      }
     }
-    
-    Serial.print("Odpověď ze serveru: ");
-    Serial.println(incomingPacket);
-    
-    // Parsování odpovědi (formát: "predikce,pravděpodobnost")
-    // Můžete použít výsledek pro další zpracování
   }
-  
-  // Čekání před dalším odesláním (např. 100ms = 10 Hz)
-  delay(100);
+
+  yield(); // důležité pro ESP8266 watchdog
 }
