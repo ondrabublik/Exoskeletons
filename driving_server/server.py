@@ -171,15 +171,17 @@ def main():
                 values = parse_sensor_packet(data)
                 print(f"Přijato od {addr}: {values}")
 
-                # Zpracování dat neuronovou sítí
-                y_pred, y_pred_prob = process_data(values, scaler, model)
+                # Řízení podle druhé hodnoty (náklon)
+                pred = 0
+                if len(values) >= 2 and abs(values[1]) > 25.0:
+                    pred = 1
 
-                # Vytvoření odpovědi (binární predikce a pravděpodobnost)
-                response = f"{y_pred},{y_pred_prob:.6f}"
+                # binární byte odpověď
+                response = bytes([pred])
 
                 # Odeslání odpovědi zpět
-                sock.sendto(response.encode('utf-8'), addr)
-                print(f"Odeslána odpověď: {response}")
+                sock.sendto(response, addr)
+                print(f"Odeslána odpověď: {pred}")
 
             except Exception as e:
                 error_msg = f"ERROR: {str(e)}"

@@ -6,12 +6,11 @@ fs = 10.0  # vzorkovací frekvence [Hz]
 dt = 1.0 / fs  # vzorkovací perioda [s]
 
 # ====== Načtení dat ======
-# data = np.loadtxt("data/DJYZLQAB.TXT", delimiter=",")
-# data = np.loadtxt("data/KQNVDOFY.TXT", delimiter=",")
-data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
-# data = np.loadtxt("data/RPAPAMEO.TXT", delimiter=",")
-# data = np.loadtxt("data/WVZRLCYU.TXT", delimiter=",")
-# data = np.loadtxt("data/XXPVYLBK.TXT", delimiter=",")
+data = np.loadtxt("data/DJYZLQAB.TXT", delimiter=",")
+#data = np.loadtxt("data/KQNVDOFY.TXT", delimiter=",")
+#data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
+#data = np.loadtxt("data/RPAPAMEO.TXT", delimiter=",")
+#data = np.loadtxt("data/WVZRLCYU.TXT", delimiter=",")
 
 # časová osa
 N = data.shape[0]

@@ -132,9 +132,13 @@ def udp_listener():
                 # Signalizace nových dat pro SSE
                 update_event.set()
 
-                # Odeslání potvrzení
-                response = "OK"
-                sock.sendto(response.encode('utf-8'), addr)
+                # Odeslání odpovědi pro stav LED (druhá hodnota = náklon)
+                pred = 0
+                if len(values) >= 1 and abs(values[1]) > 20:
+                    pred = 1
+                response = bytes([pred])
+                sock.sendto(response, addr)
+                print(f"Odeslána odpověď: {pred}")
                     
             except Exception as e:
                 error_msg = f"ERROR: {str(e)}"
