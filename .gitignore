@@ -1,0 +1,75 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── NN – training data ────────────────────────────────────────────────────────
+NN/DATA/
+NN/data/
+
+# Normalised / preprocessed data (produced by normalize_data.py)
+NN/DATA_NORM/
+NN/data_norm/
+NN/*_norm.txt
+NN/*_scaled.txt
+
+# ── NN – trained models & weights ─────────────────────────────────────────────
+NN/*.keras
+NN/*.h5
+NN/*.tflite
+NN/*_saved_model/
+NN/saved_model/
+
+# ── NN – scalers / serialised objects ─────────────────────────────────────────
+NN/*.pkl
+NN/*.joblib
+
+# ── NN – plots / results ──────────────────────────────────────────────────────
+NN/plots/
+NN/results/
+NN/*.png
+NN/*.jpg
+NN/*.jpeg
+NN/*.pdf
+NN/*.svg
+
+# ── NN – TensorBoard logs ─────────────────────────────────────────────────────
+NN/logs/
+NN/runs/
+
+# ── macOS artefacts ───────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Windows artefacts ─────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+*.lnk
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.user
+*.swp
+*.swo
+
