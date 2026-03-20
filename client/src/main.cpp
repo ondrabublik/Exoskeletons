@@ -26,6 +26,9 @@ const tflite::Model* model = nullptr;
 tflite::MicroInterpreter* interpreter = nullptr;
 TfLiteTensor* input = nullptr;
 TfLiteTensor* output = nullptr;
+
+// Příznak pro predikci
+bool predictionEnabled = true;  // false = bez neuronové sítě
 // _________________ neural network__________________________________________
 
 
@@ -39,33 +42,36 @@ const int serverPort = 8888;
 const int localPort = 8889;
 
 WiFiUDP Udp;
+
+// Příznak pro komunikaci
+bool outCommunication = true;  // false = bez WiFi a bez odesílání
 // _________________ wifi, UDP ______________________________________________
 
 // __________ potenciometer, motor, button, servo __________________________
 // pin potenciometru
 const int POT_PIN = 35;
-float potValue = 0;
+float angleValue = 0;
+const float angleMin = 0.0f;
+const float angleMax = 1.0f;
 
 // muscle button pin
 const int MUSCLE_BUTTON_PIN = 19;
 
-// LED na D3 (GPIO0)
-const int LED_PIN = 3;
-int ledState = LOW;  // 0 nebo 1 příchozí binární packet
-
 // servo pin (PWM)
 const int SERVO_PIN = 12;
+const int lock = 180;
+const int unlock = 0;
+const int SERVO_PWM_FREQ = 50;
+const int SERVO_PWM_RESOLUTION = 12;
+const int SERVO_PWM_CHANNEL = 0;
 
 // motor pin (PWM)
 const int MOTOR_PIN = 25;
+
+// LED na D3 (GPIO0)
+const int LED_PIN = 3;
+int ledState = LOW;  // 0 nebo 1 příchozí binární packet
 // __________ potenciometer, motor, button, servo __________________________
-
-
-// Příznak pro komunikaci
-bool outCommunication = true;  // false = bez WiFi a bez odesílání
-
-// Příznak pro predikci
-bool predictionEnabled = true;  // false = bez neuronové sítě
 
 // __________ MPU6050 sensors _______________________________________________
 // two sensors MPU6050 (0x68 a 0x69)
@@ -91,6 +97,14 @@ const unsigned long logicPeriod = 100000;  // 100 ms v mikrosekundách
 // FreeRTOS task handles
 TaskHandle_t task1Handle = NULL;
 TaskHandle_t task2Handle = NULL;
+
+static uint32_t servoAngleToDuty(float angle) {
+  float clamped = constrain(angle, 0.0f, 180.0f);
+  float pulseUs = 500.0f + (clamped / 180.0f) * 2000.0f;  // 500-2500 us
+  float periodUs = 1000000.0f / SERVO_PWM_FREQ;            // 50 Hz -> 20000 us
+  float maxDuty = (1 << SERVO_PWM_RESOLUTION) - 1;
+  return (uint32_t)((pulseUs / periodUs) * maxDuty);
+}
 
 void setup() {
 
@@ -139,6 +153,16 @@ void setup() {
   }
 
   Serial.println("MPU6050 senzory inicializovány");
+
+  Serial.println("Scanning...");
+
+  for (byte address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("Found at 0x");
+      Serial.println(address, HEX);
+    }
+  }
   
   // Madgwick filtry
   filter1.begin(imuFreq);
@@ -149,6 +173,11 @@ void setup() {
   // LED pin
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  pinMode(MOTOR_PIN, OUTPUT);
+  digitalWrite(MOTOR_PIN, LOW);
+  ledcSetup(SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION);
+  ledcAttachPin(SERVO_PIN, SERVO_PWM_CHANNEL);
+  ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
 
   // Muscle button pin
   pinMode(MUSCLE_BUTTON_PIN, INPUT_PULLUP);
@@ -199,7 +228,7 @@ void setup() {
     "Task1_IMU",        // Jméno tasku
     4096,               // Stack size
     NULL,               // Parametry
-    1,                  // Priorita
+    2,                  // Priorita
     &task1Handle,       // Task handle
     1                   // Core 0
   );
@@ -210,7 +239,7 @@ void setup() {
     "Task2_Logic",      // Jméno tasku
     8192,               // Stack size
     NULL,               // Parametry
-    2,                  // Priorita
+    1,                  // Priorita
     &task2Handle,       // Task handle
     0                   // Core 1
   );
@@ -279,7 +308,7 @@ void task2Logic(void *pvParameters) {
       lastLogicTime += logicPeriod;
 
       // čtení potenciometru
-      potValue = analogRead(POT_PIN) / 4096.0;  // normalizace na 0.0 - 1.0 (předpoklad, že potenciometr je zapojen jako dělič napětí)
+      angleValue = analogRead(POT_PIN) / 4096.0;  // normalizace na 0.0 - 1.0 (předpoklad, že potenciometr je zapojen jako dělič napětí)
 
       // čtení muscle button
       float muscleButton = digitalRead(MUSCLE_BUTTON_PIN) ? 1.0 : 0.0;  // 1.0 stisknuto, 0.0 nestisknuto
@@ -291,17 +320,12 @@ void task2Logic(void *pvParameters) {
       float prediction = 0.0;
       if (predictionEnabled) {
         // Vložení signálů do vstupního tensoru (první dva vstupy)
-        if (input->bytes >= 2 * sizeof(float)) {
-          input->data.f[0] = potValue; // TODO - zvolit správné signály pro model
+        if (input->bytes >= 5 * sizeof(float)) {
+          input->data.f[0] = angleValue; // TODO - zvolit správné signály pro model
           input->data.f[1] = (roll1 + 90.0) / 180.0;  // normalizace na 0.0 - 1.0
           input->data.f[2] = (gx1 + 100.0) / 200.0;  // normalizace na 0.0 - 1.0 (předpoklad, že gyroskop má rozsah ±100 deg/s)
           input->data.f[3] = (roll2 + 90.0) / 180.0;  // normalizace na 0.0 - 1.0
           input->data.f[4] = (gx2 + 100.0) / 200.0;
-          
-          // Pokud je více vstupů, vyplň zbytek nulami
-          for (int i = 2; i < input->bytes / sizeof(float); i++) {
-            input->data.f[i] = 0.0;
-          }
         }
 
         // Spuštění inference
@@ -310,6 +334,16 @@ void task2Logic(void *pvParameters) {
         } else {
           // Čtení výstupu
           prediction = output->data.f[0];
+
+          if (prediction > 0.9f && angleValue >= angleMin && angleValue <= angleMax) {
+            digitalWrite(MOTOR_PIN, HIGH);
+            ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(lock));
+            digitalWrite(LED_PIN, HIGH);
+          } else {
+            digitalWrite(MOTOR_PIN, LOW);
+            ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
+            digitalWrite(LED_PIN, LOW);
+          }
         }
       }
 
@@ -317,7 +351,7 @@ void task2Logic(void *pvParameters) {
       if (outCommunication) {
         // 7 hodnot pro binární packet float[7]
         float dataPayload[7] = {
-          potValue,
+          angleValue,
           roll1,
           gx1,
           roll2,
@@ -342,4 +376,5 @@ void task2Logic(void *pvParameters) {
 void loop() {
   // Loop zůstává prázdný - veškerá logika je v taskcích
   vTaskDelay(100 / portTICK_PERIOD_MS);
+  //vTaskDelay(portMAX_DELAY);
 }
