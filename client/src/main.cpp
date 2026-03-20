@@ -211,6 +211,8 @@ void setup() {
   static tflite::MicroMutableOpResolver<10> resolver;
   
   // Registrace operací potřebných pro model
+  resolver.AddConv2D();        // pro Conv1D !!!
+  resolver.AddReshape();       // Flatten
   resolver.AddFullyConnected();
   resolver.AddRelu();
   resolver.AddLogistic();
