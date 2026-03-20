@@ -67,6 +67,11 @@ const int SERVO_PWM_CHANNEL = 0;
 
 // motor pin (PWM)
 const int MOTOR_PIN = 25;
+const int MOTOR_PWM_FREQ = 2000;
+const int MOTOR_PWM_RESOLUTION = 10;
+const int MOTOR_PWM_CHANNEL = 1;
+// Nastavitelná intenzita motoru v rozsahu 0..1
+const float MOTOR_INTENSITY = 1.0f;
 
 // LED na D3 (GPIO0)
 const int LED_PIN = 3;
@@ -104,6 +109,12 @@ static uint32_t servoAngleToDuty(float angle) {
   float periodUs = 1000000.0f / SERVO_PWM_FREQ;            // 50 Hz -> 20000 us
   float maxDuty = (1 << SERVO_PWM_RESOLUTION) - 1;
   return (uint32_t)((pulseUs / periodUs) * maxDuty);
+}
+
+static uint32_t motorIntensityToDuty(float intensity) {
+  float clamped = constrain(intensity, 0.0f, 1.0f);
+  float maxDuty = (1 << MOTOR_PWM_RESOLUTION) - 1;
+  return (uint32_t)(clamped * maxDuty);
 }
 
 void setup() {
@@ -174,7 +185,9 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   pinMode(MOTOR_PIN, OUTPUT);
-  digitalWrite(MOTOR_PIN, LOW);
+  ledcSetup(MOTOR_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
+  ledcAttachPin(MOTOR_PIN, MOTOR_PWM_CHANNEL);
+  ledcWrite(MOTOR_PWM_CHANNEL, 0);
   ledcSetup(SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION);
   ledcAttachPin(SERVO_PIN, SERVO_PWM_CHANNEL);
   ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
@@ -336,11 +349,11 @@ void task2Logic(void *pvParameters) {
           prediction = output->data.f[0];
 
           if (prediction > 0.9f && angleValue >= angleMin && angleValue <= angleMax) {
-            digitalWrite(MOTOR_PIN, HIGH);
+            ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(MOTOR_INTENSITY));
             ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(lock));
             digitalWrite(LED_PIN, HIGH);
           } else {
-            digitalWrite(MOTOR_PIN, LOW);
+            ledcWrite(MOTOR_PWM_CHANNEL, 0);
             ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
             digitalWrite(LED_PIN, LOW);
           }
