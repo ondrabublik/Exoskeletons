@@ -29,7 +29,7 @@ TfLiteTensor* input = nullptr;
 TfLiteTensor* output = nullptr;
 
 // Příznak pro predikci
-bool predictionEnabled = true;  // false = bez neuronové sítě
+bool predictionEnabled = false;  // false = bez neuronové sítě
 // _________________ neural network__________________________________________
 
 
@@ -44,13 +44,14 @@ const char* password = "Kdyzkodpomaha";
 // const int serverPort = 8888;
 const int localPort = 8889;
 
-const char* serverIP = "192.168.30.86";
+const char* serverIP = "192.168.31.100";
 const int serverPort = 9999;
 
 WiFiUDP Udp;
 
 // Příznak pro komunikaci
 bool outCommunication = true;  // false = bez WiFi a bez odesílání
+float dataPayload[7];
 // _________________ wifi, UDP ______________________________________________
 
 // __________ potenciometer, motor, button, servo __________________________
@@ -70,7 +71,7 @@ const int unlock = 0;
 Servo doorServo;
 
 // motor pin (PWM)
-const int MOTOR_PIN = 25;
+const int MOTOR_PIN = 8;
 const int MOTOR_PWM_FREQ = 2000;
 const int MOTOR_PWM_RESOLUTION = 10;
 const int MOTOR_PWM_CHANNEL = 1;
@@ -86,14 +87,11 @@ int ledState = LOW;  // 0 nebo 1 příchozí binární packet
 // two sensors MPU6050 (0x68 a 0x69)
 Adafruit_MPU6050 mpu1;
 Adafruit_MPU6050 mpu2;
-
-float gx1, gy1, gz1;
-float gx2, gy2, gz2;
-float ax1, ay1, az1;
-float ax2, ay2, az2;
+bool mpu1_ok = false;
+bool mpu2_ok = false;
 
 // frekvence IMU
-const float imuFreq = 50.0;
+const float imuFreq = 10.0;
 const unsigned long imuPeriod = 1000000 / imuFreq;  // 20 ms v mikrosekundách
 
 unsigned long lastIMUTime = 0;
@@ -148,13 +146,19 @@ void setup() {
   Wire.setTimeout(3000);
 
   // inicializace prvního senzoru (0x68)
-  if (!mpu1.begin(0x68)) {
+  if (mpu1.begin(0x68)) {
+    mpu1_ok = true;
+  } else {
     Serial.println("MPU1 nenalezen!");
   }
 
-  // inicializace druhého senzoru (0x69)
-  if (!mpu2.begin(0x69)) {
+  if (mpu2.begin(0x69)) {
+    mpu2_ok = true;
+  } else {
     Serial.println("MPU2 nenalezen!");
+  }
+  if (!mpu1_ok && !mpu2_ok) {
+    Serial.println("Zadny MPU6050 nenalezen - IMU data budou nulova.");
   }
 
   Serial.println("MPU6050 senzory inicializovány");
@@ -188,44 +192,48 @@ void setup() {
   // __________ potenciometer, motor, button __________________________________
 
   // _________________ neural network__________________________________________
-  Serial.println("Inicializace modelu...");
+  if (predictionEnabled) {
+    Serial.println("Inicializace modelu...");
 
-  // Načtení modelu z paměti
-  model = tflite::GetModel(model_tflite);
+    // Načtení modelu z paměti
+    model = tflite::GetModel(model_tflite);
 
-  if (model->version() != TFLITE_SCHEMA_VERSION) {
-    Serial.println("Chyba: nekompatibilní verze modelu!");
-    while (1);
+    if (model->version() != TFLITE_SCHEMA_VERSION) {
+      Serial.println("Chyba: nekompatibilní verze modelu!");
+      while (1);
+    }
+
+    // Registr všech operací (jednoduché řešení)
+    static tflite::MicroMutableOpResolver<10> resolver;
+    
+    // Registrace operací potřebných pro model
+    resolver.AddConv2D();        // pro Conv1D !!!
+    resolver.AddReshape();       // Flatten
+    resolver.AddFullyConnected();
+    resolver.AddRelu();
+    resolver.AddLogistic();
+
+    // Vytvoření interpreteru
+    interpreter = new tflite::MicroInterpreter(
+        model,
+        resolver,
+        tensor_arena,
+        kTensorArenaSize
+    );
+
+    // Alokace tensorů
+    if (interpreter->AllocateTensors() != kTfLiteOk) {
+      Serial.println("AllocateTensors selhalo!");
+      while (1);
+    }
+
+    input = interpreter->input(0);
+    output = interpreter->output(0);
+
+    Serial.println("Model připraven.");
+  } else {
+    Serial.println("Predikce vypnuta - model se neinicializuje.");
   }
-
-  // Registr všech operací (jednoduché řešení)
-  static tflite::MicroMutableOpResolver<10> resolver;
-  
-  // Registrace operací potřebných pro model
-  resolver.AddConv2D();        // pro Conv1D !!!
-  resolver.AddReshape();       // Flatten
-  resolver.AddFullyConnected();
-  resolver.AddRelu();
-  resolver.AddLogistic();
-
-  // Vytvoření interpreteru
-  interpreter = new tflite::MicroInterpreter(
-      model,
-      resolver,
-      tensor_arena,
-      kTensorArenaSize
-  );
-
-  // Alokace tensorů
-  if (interpreter->AllocateTensors() != kTfLiteOk) {
-    Serial.println("AllocateTensors selhalo!");
-    while (1);
-  }
-
-  input = interpreter->input(0);
-  output = interpreter->output(0);
-
-  Serial.println("Model připraven.");
   // _________________ neural network__________________________________________
 
   // Vytvoření Task 1 (IMU - čtení a filtrování)
@@ -236,7 +244,7 @@ void setup() {
     NULL,               // Parametry
     1,                  // Priorita
     &task1Handle,       // Task handle
-    1                   // Core 0
+    0                   // Core 0
   );
 
   // Vytvoření Task 2 (Logika - inference a UDP)
@@ -247,7 +255,7 @@ void setup() {
     NULL,               // Parametry
     2,                  // Priorita
     &task2Handle,       // Task handle
-    0                   // Core 1
+    1                   // Core 1
   );
 
   Serial.println("Tasky vytvořeny.");
@@ -262,29 +270,18 @@ void task1IMU(void *pvParameters) {
 
     if (now - lastIMUTime >= imuPeriod) {
       lastIMUTime = now;
+      // Odeslat binární data (pouze pokud je komunikace povolena)
+      if (outCommunication) {
+        Udp.beginPacket(serverIP, serverPort);
+        Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
+        Udp.endPacket();
 
-      // data ze senzorů
-      sensors_event_t a1, g1, t1;
-      sensors_event_t a2, g2, t2;
-
-      mpu1.getEvent(&a1, &g1, &t1);
-      mpu2.getEvent(&a2, &g2, &t2);
-
-      // převod rad/s -> deg/s
-      gx1 = g1.gyro.x * 57.2958;
-      gy1 = g1.gyro.y * 57.2958;
-      gz1 = g1.gyro.z * 57.2958;
-
-      gx2 = g2.gyro.x * 57.2958;
-      gy2 = g2.gyro.y * 57.2958;
-      gz2 = g2.gyro.z * 57.2958;
-
-      ax1 = a1.acceleration.x;
-      ay1 = a1.acceleration.y;
-      az1 = a1.acceleration.z;
-      ax2 = a2.acceleration.x;
-      ay2 = a2.acceleration.y;
-      az2 = a2.acceleration.z;
+        // // Debug: vypíšeme data do seriálu
+        // Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+        //             dataPayload[0], dataPayload[1], dataPayload[2],
+        //             dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
+}
+      
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
@@ -301,14 +298,39 @@ void task2Logic(void *pvParameters) {
     if (now - lastLogicTime >= logicPeriod) {
       lastLogicTime += logicPeriod;
 
+      // data ze senzorů (bezpečný fallback na nuly, pokud IMU chybí)
+      float gx1 = 0.0f;
+      float gx2 = 0.0f;
+      float ax1 = 0.0f;
+      float ay1 = 0.0f;
+      float ax2 = 0.0f;
+      float ay2 = 0.0f;
+
+      if (mpu1_ok) {
+        sensors_event_t a1, g1, t1;
+        mpu1.getEvent(&a1, &g1, &t1);
+        gx1 = g1.gyro.x * 57.2958f;  // rad/s -> deg/s
+        ax1 = a1.acceleration.x;
+        ay1 = a1.acceleration.y;
+      }
+
+      if (mpu2_ok) {
+        sensors_event_t a2, g2, t2;
+        mpu2.getEvent(&a2, &g2, &t2);
+        gx2 = g2.gyro.x * 57.2958f;  // rad/s -> deg/s
+        ax2 = a2.acceleration.x;
+        ay2 = a2.acceleration.y;
+      }
+
+
       // čtení potenciometru
       angleValue = analogRead(POT_PIN) / 4096.0;  // normalizace na 0.0 - 1.0 (předpoklad, že potenciometr je zapojen jako dělič napětí)
 
       // čtení muscle button
       float muscleButton = digitalRead(MUSCLE_BUTTON_PIN) ? 1.0 : 0.0;  // 1.0 stisknuto, 0.0 nestisknuto
 
-      float roll1 = atan2(ay1, az1) * 57.2958f;
-      float roll2 = atan2(ay2, az2) * 57.2958f;
+      float roll1 = atan2(ay1, ax1) * 57.2958f;
+      float roll2 = atan2(ay2, ax2) * 57.2958f;
 
       // Spuštění inference (pouze pokud je povolena predikce)
       float prediction = 0.0;
@@ -341,27 +363,18 @@ void task2Logic(void *pvParameters) {
         }
       }
 
-      // Odeslat binární data (pouze pokud je komunikace povolena)
       if (outCommunication) {
         // 7 hodnot pro binární packet float[7]
-        float dataPayload[7] = {
-          angleValue,
-          roll1,
-          gx1,
-          roll2,
-          gx2,
-          muscleButton,
-          prediction
-        };
-        Udp.beginPacket(serverIP, serverPort);
-        Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
-        Udp.endPacket();
-
-        // Debug: vypíšeme data do seriálu
-        // Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-        //             dataPayload[0], dataPayload[1], dataPayload[2],
-        //             dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
+        dataPayload[0] = angleValue;
+        dataPayload[1] = (roll1 + 90.0) / 180.0;
+        dataPayload[2] = (gx1 + 100.0) / 200.0;
+        dataPayload[3] = (roll2 + 90.0) / 180.0;
+        dataPayload[4] = (gx2 + 100.0) / 200.0;
+        dataPayload[5] = muscleButton;
+        dataPayload[6] = prediction;
       }
+
+      //ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(1));
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
