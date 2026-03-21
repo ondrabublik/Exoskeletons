@@ -4,20 +4,21 @@ models.py
 Two lightweight architectures for binary ON/OFF classification.
 Both are designed to be tiny enough to convert for ESP32 (TFLite / EloquentTF).
 
-Input shape: (WINDOW, 7)   → 7 sensor channels over WINDOW time-steps
+Input shape: (WINDOW, 5)   → 5 sensor channels over WINDOW time-steps
+                              (angle, x, y, z, omx – already Min-Max scaled)
 
 Architecture A – Dense (MLP on flattened window)
     Flatten → Dense(64) → BN → ReLU → Dropout
             → Dense(32) → BN → ReLU → Dropout
             → Dense(1, sigmoid)
-    ~  6 k parameters
+    ~  4 k parameters
 
 Architecture B – 1-D CNN
     Conv1D(16, k=5) → BN → ReLU
     Conv1D(32, k=3) → BN → ReLU → GlobalAvgPool
     Dense(32) → BN → ReLU → Dropout
     Dense(1, sigmoid)
-    ~ 10 k parameters
+    ~ 8 k parameters
 """
 
 import tensorflow as tf

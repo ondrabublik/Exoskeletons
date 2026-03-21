@@ -1,10 +1,9 @@
 """
 data_loader.py
 --------------
-Loads all TXT files from the DATA folder, builds windowed sequences
-and returns train/val/test splits ready for both Dense and CNN models.
-
-Each TXT row: angle, x, y, z, omx, omy, omz, label
+Loads all TXT files from the DATA folder, builds windowed
+sequences and returns train/val/test splits ready for both Dense and CNN models.
+    angle, x, y, z, omx, label
 Sampling is done with a sliding window so the network sees a short
 temporal context instead of a single snapshot.
 """
@@ -13,16 +12,14 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-import joblib
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 DATA_DIR   = os.path.join(os.path.dirname(__file__), "DATA")
-COLUMNS    = ["angle", "x", "y", "z", "omx", "omy", "omz", "label"]
-FEATURES   = ["angle", "x", "y", "z", "omx", "omy", "omz"]
+COLUMNS    = ["angle", "x", "y", "z", "omx", "label"]
+FEATURES   = ["angle", "x", "y", "z", "omx"]
 WINDOW     = 20      # number of time-steps fed to the network at once
-STEP       = 5       # sliding-window stride (smaller → more samples, more overlap)
-SCALER_PATH = os.path.join(os.path.dirname(__file__), "scaler.pkl")
+STEP       = 1       # sliding-window stride – use 1 for maximum samples (full overlap)
+                     # increase (e.g. 5) only if you have a very large dataset and want faster training
 # ────────────────────────────────────────────────────────────────────────────
 
 
@@ -36,20 +33,15 @@ def load_raw(data_dir: str = DATA_DIR) -> pd.DataFrame:
 
     for fname in sorted(txt_files):
         path = os.path.join(data_dir, fname)
-        df = pd.read_csv(path, header=None, names=COLUMNS,
-                         skipinitialspace=True)
+        df = pd.read_csv(path, header=None, names=COLUMNS,skipinitialspace=True)
         # Drop rows that couldn't be parsed (e.g. all-zero glitches)
         df = df.dropna()
         df["source"] = fname          # keep track of origin file
         frames.append(df)
-        print(f"  Loaded {fname}: {len(df)} rows, "
-              f"ON={int(df['label'].sum())}, "
-              f"OFF={int((df['label'] == 0).sum())}")
+        print(f"  Loaded {fname}: {len(df)} rows, "f"ON={int(df['label'].sum())}, " f"OFF={int((df['label'] == 0).sum())}")
 
     combined = pd.concat(frames, ignore_index=True)
-    print(f"\nTotal rows: {len(combined)}, "
-          f"ON={int(combined['label'].sum())}, "
-          f"OFF={int((combined['label'] == 0).sum())}")
+    print(f"\nTotal rows: {len(combined)}, " f"ON={int(combined['label'].sum())}, " f"OFF={int((combined['label'] == 0).sum())}")
     return combined
 
 
@@ -71,30 +63,23 @@ def make_windows(X: np.ndarray, y: np.ndarray,
 
 
 def build_dataset(window: int = WINDOW, step: int = STEP,
-                  val_size: float = 0.15, test_size: float = 0.15,
-                  fit_scaler: bool = True):
+                  val_size: float = 0.15, test_size: float = 0.15):
     """
-    Full pipeline: load → scale → window → split.
+    Full pipeline: load → window → split.
+    Data must already be Min-Max normalised (run normalize_data.py first).
 
     Returns
     -------
     (X_train, y_train), (X_val, y_val), (X_test, y_test)
-    Each X has shape  (N, window, 7)
+    Each X has shape  (N, window, 5)
     Each y has shape  (N,)
     """
     df = load_raw()
 
-    # ── 1. Scale features (fit on training data only, saved to disk) ──────
-    scaler = StandardScaler()
+    # ── 1. Extract features and labels (already scaled to [0,1]) ──────────
     X_all = df[FEATURES].values.astype(np.float32)
     y_all = df["label"].values.astype(np.int32)
-
-    # Fit scaler on everything for now (limited data).
-    # With more data, fit only on train split.
-    X_scaled = scaler.fit_transform(X_all)
-    if fit_scaler:
-        joblib.dump(scaler, SCALER_PATH)
-        print(f"Scaler saved → {SCALER_PATH}")
+    X_scaled = X_all   # no further scaling needed
 
     # ── 2. Build windows per source file to avoid cross-file contamination ─
     sources = df["source"].values
@@ -108,8 +93,7 @@ def build_dataset(window: int = WINDOW, step: int = STEP,
     X = np.concatenate(all_Xw, axis=0)
     y = np.concatenate(all_yw, axis=0)
 
-    print(f"\nWindowed dataset: {X.shape}, "
-          f"ON={y.sum()}, OFF={(y == 0).sum()}, "
+    print(f"\nWindowed dataset: {X.shape}, "f"ON={y.sum()}, OFF={(y == 0).sum()}, "
           f"imbalance ratio = {(y==0).sum()/max(y.sum(),1):.1f}:1")
 
     # ── 3. Train / val / test split ────────────────────────────────────────

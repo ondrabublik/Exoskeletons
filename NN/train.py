@@ -14,18 +14,100 @@ Usage:
 import argparse
 import os
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")   # no display needed – saves PNG files
+import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 
 from data_loader import build_dataset, WINDOW
 from models import build_dense_model, build_cnn_model, compile_model
+from converter import convert_model
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
-EPOCHS        = 100
+EPOCHS        = 200
 BATCH_SIZE    = 32
 LEARNING_RATE = 1e-3
-OUT_DIR = os.path.dirname(__file__)
+OUT_DIR  = os.path.dirname(__file__)
+PLOT_DIR = os.path.join(OUT_DIR, "plots")
+os.makedirs(PLOT_DIR, exist_ok=True)
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def plot_training(history: keras.callbacks.History, name: str):
+    """
+    Save two diagnostic plots after training:
+
+    1. loss / accuracy / AUC  – train vs val  (spot under/over-fitting)
+    2. train-val GAP over epochs               (early-stop / overfit indicator)
+       • gap > 0 and growing → overfitting
+       • both curves high     → underfitting
+       • both curves low & close → good fit
+    """
+    h = history.history
+    epochs = range(1, len(h["loss"]) + 1)
+
+    # ── Plot 1: three-panel metric curves ─────────────────────────────────
+    metrics = [
+        ("loss",     "Loss",     "lower is better"),
+        ("accuracy", "Accuracy", "higher is better"),
+        ("auc",      "AUC",      "higher is better"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    for ax, (key, title, note) in zip(axes, metrics):
+        if key not in h:
+            ax.set_visible(False)
+            continue
+        ax.plot(epochs, h[key],           lw=2, label="train")
+        ax.plot(epochs, h[f"val_{key}"],  lw=2, label="val", linestyle="--")
+        ax.set_title(f"{title}\n({note})")
+        ax.set_xlabel("Epoch")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    fig.suptitle(f"{name.upper()} – training curves", fontsize=13)
+    fig.tight_layout()
+    path1 = os.path.join(PLOT_DIR, f"{name}_training_curves.png")
+    fig.savefig(path1, dpi=120)
+    plt.close(fig)
+    print(f"Plot saved → {path1}")
+
+    # ── Plot 2: train-val gap (overfitting indicator) ─────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+    loss_gap = np.array(h["val_loss"]) - np.array(h["loss"])
+    axes[0].plot(epochs, loss_gap, color="crimson", lw=2)
+    axes[0].axhline(0, color="gray", linestyle="--", lw=0.8)
+    axes[0].fill_between(epochs, loss_gap, 0,
+                         where=(loss_gap > 0), alpha=0.15, color="crimson",
+                         label="val > train (overfit risk)")
+    axes[0].fill_between(epochs, loss_gap, 0,
+                         where=(loss_gap <= 0), alpha=0.15, color="steelblue",
+                         label="train > val (underfit / noise)")
+    axes[0].set_title("Loss gap  (val_loss − train_loss)")
+    axes[0].set_xlabel("Epoch")
+    axes[0].legend(fontsize=8)
+    axes[0].grid(True, alpha=0.3)
+
+    if "auc" in h:
+        auc_gap = np.array(h["auc"]) - np.array(h["val_auc"])
+        axes[1].plot(epochs, auc_gap, color="darkorange", lw=2)
+        axes[1].axhline(0, color="gray", linestyle="--", lw=0.8)
+        axes[1].fill_between(epochs, auc_gap, 0,
+                             where=(auc_gap > 0), alpha=0.15, color="darkorange",
+                             label="train AUC > val (overfit risk)")
+        axes[1].set_title("AUC gap  (train_auc − val_auc)")
+        axes[1].set_xlabel("Epoch")
+        axes[1].legend(fontsize=8)
+        axes[1].grid(True, alpha=0.3)
+    else:
+        axes[1].set_visible(False)
+
+    fig.suptitle(f"{name.upper()} – overfitting diagnostic", fontsize=13)
+    fig.tight_layout()
+    path2 = os.path.join(PLOT_DIR, f"{name}_overfit_gap.png")
+    fig.savefig(path2, dpi=120)
+    plt.close(fig)
+    print(f"Plot saved → {path2}")
 
 
 def compute_class_weight(y_train: np.ndarray) -> dict:
@@ -41,7 +123,8 @@ def compute_class_weight(y_train: np.ndarray) -> dict:
 
 
 def get_callbacks(name: str) -> list:
-    ckpt_path = os.path.join(OUT_DIR, f"{name}_best.keras")
+    ckpt_path    = os.path.join(OUT_DIR, f"{name}_best.keras")
+    ckpt_path_h5 = os.path.join(OUT_DIR, f"{name}_best.h5")
     return [
         keras.callbacks.ModelCheckpoint(
             ckpt_path,
@@ -49,6 +132,13 @@ def get_callbacks(name: str) -> list:
             mode="max",
             save_best_only=True,
             verbose=1,
+        ),
+        keras.callbacks.ModelCheckpoint(
+            ckpt_path_h5,
+            monitor="val_auc",
+            mode="max",
+            save_best_only=True,
+            verbose=0,          # silent – same checkpoint, just different format
         ),
         keras.callbacks.EarlyStopping(
             monitor="val_auc",
@@ -98,9 +188,21 @@ def train_model(model: keras.Model, name: str,
     model.save(keras_path)
     print(f"Model saved → {keras_path}")
 
+    h5_path = os.path.join(OUT_DIR, f"{name}_final.h5")
+    model.save(h5_path)
+    print(f"Model saved → {h5_path}  (HDF5 / legacy format)")
+    convert_model(h5_path, OUT_DIR)
+
+    best_h5_path = os.path.join(OUT_DIR, f"{name}_best.h5")
+    if os.path.exists(best_h5_path):
+        convert_model(best_h5_path, OUT_DIR)
+
     saved_model_dir = os.path.join(OUT_DIR, f"{name}_saved_model")
     model.export(saved_model_dir)
     print(f"SavedModel  → {saved_model_dir}")
+
+    # ── Training plots ─────────────────────────────────────────────────────
+    plot_training(history, name)
 
     return history
 

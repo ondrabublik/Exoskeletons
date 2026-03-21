@@ -2,9 +2,11 @@
 predict.py
 ----------
 Minimal inference script – mimics what will run on the ESP32:
-  1. Load the scaler parameters.
-  2. Maintain a rolling window of the last WINDOW samples.
-  3. Feed the window to the model and output ON / OFF.
+  1. Maintain a rolling window of the last WINDOW samples.
+  2. Feed the window to the model and output ON / OFF.
+
+Data must already be Min-Max normalised (run normalize_data.py first).
+Input columns per row: angle, x, y, z, omx, label  (6 columns)
 
 Run as a standalone demo:
     python predict.py --model cnn --file DATA/RPAPAMEO.TXT
@@ -16,18 +18,16 @@ exactly as the microcontroller would receive data in real time.
 import argparse
 import os
 import numpy as np
-import joblib
 import tensorflow as tf
 from tensorflow import keras
 
-from data_loader import WINDOW, FEATURES, SCALER_PATH
+from data_loader import WINDOW, FEATURES
 
 OUT_DIR = os.path.dirname(__file__)
 
 
 def stream_predict(model_name: str, txt_file: str, threshold: float = 0.5):
-    # Load scaler and model
-    scaler = joblib.load(SCALER_PATH)
+    # Load model
     model_path = os.path.join(OUT_DIR, f"{model_name}_best.keras")
     if not os.path.exists(model_path):
         model_path = os.path.join(OUT_DIR, f"{model_name}_final.keras")
@@ -47,22 +47,19 @@ def stream_predict(model_name: str, txt_file: str, threshold: float = 0.5):
     with open(txt_file, "r") as fh:
         for line in fh:
             parts = line.strip().split(",")
-            if len(parts) != 8:
+            if len(parts) != 6:   # angle, x, y, z, omx, label
                 continue
             try:
-                vals  = [float(p) for p in parts]
+                vals = [float(p) for p in parts]
             except ValueError:
                 continue
 
-            features    = np.array(vals[:7], dtype=np.float32)
-            true_label  = int(vals[7])
-
-            # Scale single sample
-            feat_scaled = scaler.transform(features.reshape(1, -1))[0]
+            features   = np.array(vals[:5], dtype=np.float32)  # already scaled
+            true_label = int(vals[5])
 
             # Shift buffer and insert new sample
             buffer[:-1] = buffer[1:]
-            buffer[-1]  = feat_scaled
+            buffer[-1]  = features
             buf_idx    += 1
 
             # Only predict once the buffer is full
