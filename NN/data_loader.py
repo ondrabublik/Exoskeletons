@@ -79,14 +79,17 @@ def make_windows(X: np.ndarray, y: np.ndarray,
     Slide a window over a single continuous recording.
     Returns:
         Xw  – shape (N, window, n_features)
-        yw  – shape (N,)  label = 1 if ANY step in window is ON
+        yw  – shape (N,)
+
+    Labelling strategy: the window label = label of the LAST sample in the
+    window. This ensures the prediction fires at the moment the gesture
+    completes (the end of the window), not delayed by averaging over leading
+    OFF samples. Avoids the common 'prediction is N steps late' artifact.
     """
     Xw, yw = [], []
     for i in range(0, len(X) - window, step):
         Xw.append(X[i: i + window])
-        # label the window as ON if the majority of its steps are ON
-        # (change to .any() for more sensitive detection)
-        yw.append(1 if y[i: i + window].mean() >= 0.5 else 0)
+        yw.append(np.round(y[i + window - 1]))   # label of the last timestep
     return np.array(Xw, dtype=np.float32), np.array(yw, dtype=np.int32)
 
 

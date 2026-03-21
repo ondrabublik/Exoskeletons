@@ -182,7 +182,7 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["dense", "cnn"], default="cnn")
-    parser.add_argument("--file",  default=os.path.join("DATA", "c:\\Users\\vaclav.heidler\\Downloads\\2026-03-21T15-10-41-489Z.csv"))
+    parser.add_argument("--file",  default=os.path.join("DATA", "c:\\Users\\vaclav.heidler\\Downloads\\2026-03-21T15-10-41-489Z_predicted.csv"))
     parser.add_argument("--threshold", type=float, default=0.6)
     args = parser.parse_args()
     stream_predict(args.model, args.file, args.threshold)
