@@ -1,5 +1,8 @@
+const ip = '192.168.30.86';
+// const ip = '10.255.57.209';
+
 // Configuration
-const CHANNEL_NAMES = [
+const SERIES_NAMES = [
   'Angle',
   'Pitch 1',
   'Pitch Rate 1',
@@ -9,7 +12,7 @@ const CHANNEL_NAMES = [
   'Prediction'
 ];
 
-const COLORS = [
+const SERIES_COLORS = [
   '#4fc3f7',
   '#81c784',
   '#ffb74d',
@@ -17,6 +20,15 @@ const COLORS = [
   '#ba68c8',
   '#4db6ac',
   '#fff176'
+];
+
+const CARD_CONFIGS = [
+  { title: 'Angle', series: [0] },
+  { title: 'Pitch 1', series: [1] },
+  { title: 'Pitch Rate 1', series: [2] },
+  { title: 'Pitch 2', series: [3] },
+  { title: 'Pitch Rate 2', series: [4] },
+  { title: 'Input + Prediction', series: [5, 6] }
 ];
 
 let MAX_POINTS = 300;
@@ -28,22 +40,18 @@ const CHART_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
 const LAYOUT_CONFIGS = {
   '1col': {
     cols: 1,
-    rows: [{ label: null, channels: [0, 1, 2, 3, 4, 5, 6], spanFirst: false }]
+    rows: [{ label: null, cards: [0, 1, 2, 3, 4, 5], spanFirst: false }]
   },
   '2col': {
     cols: 2,
     rows: [
-      { label: 'Angle',   channels: [0],       spanFirst: false },
-      { label: 'Pitch 1', channels: [1, 2],    spanFirst: false },
-      { label: 'Pitch 2', channels: [3, 4],    spanFirst: false },
-      { label: 'Output',  channels: [5, 6],    spanFirst: false }
+      { label: null, cards: [0, 5, 1, 2, 3, 4], spanFirst: false }
     ]
   },
-  '4col': {
-    cols: 4,
+  '3col': {
+    cols: 3,
     rows: [
-      { label: 'Pitch',  channels: [1, 2, 3, 4], spanFirst: false },
-      { label: 'Other',  channels: [0, 5, 6],    spanFirst: true  }
+      { label: null, cards: [0, 1, 2, 5, 3, 4], spanFirst: false }
     ]
   }
 };
@@ -65,7 +73,7 @@ let replayLastFrameMs = 0;
 let replayRaf = null;
 let replayMode = 'smooth';
 
-const socket = io('http://192.168.30.86:3000');
+const socket = io(`http://${ip}:3000`);
 
 // Helper functions
 function getTimeLabel(sampleIndex, frequencyHz) {
@@ -97,8 +105,8 @@ function flushRender() {
 }
 
 function buildDashboard(keyPrefix) {
-  return CHANNEL_NAMES.map((name, i) => {
-    const color = COLORS[i];
+  return CARD_CONFIGS.map((cardCfg, i) => {
+    const color = SERIES_COLORS[cardCfg.series[0]];
     const cardId = `${keyPrefix}-${i}`;
 
     const card = document.createElement('div');
@@ -106,7 +114,7 @@ function buildDashboard(keyPrefix) {
     card.dataset.cardId = cardId;
     card.innerHTML = `
       <div class="card-header">
-        <span class="card-title" style="color:${color}">${name}</span>
+        <span class="card-title" style="color:${color}">${cardCfg.title}</span>
         <span class="card-value" id="val-${cardId}">--</span>
         <button class="btn-icon" id="fsc-${cardId}" title="Fullscreen">⊞</button>
         <button class="btn-icon" id="col-${cardId}" title="Collapse">Hide</button>
@@ -117,23 +125,22 @@ function buildDashboard(keyPrefix) {
         </div>
       </div>`;
 
-    // Pre-allocate a fixed buffer of {x,y} objects — never reallocated
-    const buf = Array.from({ length: MAX_POINTS }, (_, j) => ({ x: j, y: null }));
+    // Pre-allocate fixed buffers of {x,y} objects per dataset — never reallocated
+    const bufs = cardCfg.series.map(() => Array.from({ length: MAX_POINTS }, (_, j) => ({ x: j, y: null })));
+    const datasets = cardCfg.series.map((seriesIndex, datasetIndex) => ({
+      data: bufs[datasetIndex],
+      borderColor: SERIES_COLORS[seriesIndex],
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false
+    }));
 
     const ctx = card.querySelector('canvas').getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
       data: {
-        datasets: [
-          {
-            data: buf,
-            borderColor: color,
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.3,
-            fill: false
-          }
-        ]
+        datasets
       },
       options: {
         animation: false,
@@ -203,7 +210,7 @@ function buildDashboard(keyPrefix) {
       colBtn.click();
     });
 
-    return { cardId, chart, buf, el: card, bodyEl: body, valueEl, rowHidden: false };
+    return { cardId, chart, bufs, seriesIndices: cardCfg.series, el: card, bodyEl: body, valueEl, rowHidden: false };
   });
 }
 
@@ -231,8 +238,8 @@ function applyLayout(gridEl, cards, layoutKey) {
       toggleBtn.addEventListener('click', () => {
         const hidden = section.classList.toggle('row-hidden');
         toggleBtn.textContent = hidden ? 'Show' : 'Hide';
-        row.channels.forEach((ch) => {
-          if (cards[ch]) cards[ch].rowHidden = hidden;
+        row.cards.forEach((cardIndex) => {
+          if (cards[cardIndex]) cards[cardIndex].rowHidden = hidden;
         });
       });
       bar.appendChild(toggleBtn);
@@ -242,11 +249,11 @@ function applyLayout(gridEl, cards, layoutKey) {
     const rowCards = document.createElement('div');
     rowCards.className = `row-cards cols-${config.cols}`;
 
-    row.channels.forEach((ch, idx) => {
-      const cardObj = cards[ch];
+    row.cards.forEach((cardIndex, idx) => {
+      const cardObj = cards[cardIndex];
       if (!cardObj) return;
       // Single card spanning a multi-col row → full width
-      if (row.channels.length === 1 && config.cols > 1) {
+      if (row.cards.length === 1 && config.cols > 1) {
         cardObj.el.style.gridColumn = '1 / -1';
       } else if (row.spanFirst && idx === 0) {
         cardObj.el.style.gridColumn = 'span 2';
@@ -276,14 +283,15 @@ function updateChartMaxPoints() {
   const allCards = [...liveCards, ...replayCards];
   allCards.forEach((current) => {
     current.chart.options.scales.x.max = MAX_POINTS - 1;
-    const oldBuf = current.buf;
-    const newBuf = Array.from({ length: MAX_POINTS }, (_, i) => ({ x: i, y: null }));
-    const copyCount = Math.min(oldBuf.length, MAX_POINTS);
-    const copyFrom = oldBuf.length - copyCount;
-    const pad = MAX_POINTS - copyCount;
-    for (let j = 0; j < copyCount; j++) newBuf[pad + j].y = oldBuf[copyFrom + j].y;
-    current.buf = newBuf;
-    current.chart.data.datasets[0].data = newBuf;
+    current.bufs = current.bufs.map((oldBuf, datasetIndex) => {
+      const newBuf = Array.from({ length: MAX_POINTS }, (_, i) => ({ x: i, y: null }));
+      const copyCount = Math.min(oldBuf.length, MAX_POINTS);
+      const copyFrom = oldBuf.length - copyCount;
+      const pad = MAX_POINTS - copyCount;
+      for (let j = 0; j < copyCount; j++) newBuf[pad + j].y = oldBuf[copyFrom + j].y;
+      current.chart.data.datasets[datasetIndex].data = newBuf;
+      return newBuf;
+    });
     dirtyCharts.add(current.chart);
   });
   scheduleRender();
@@ -291,8 +299,9 @@ function updateChartMaxPoints() {
 
 function resetDashboard(cards) {
   cards.forEach((current) => {
-    const buf = current.buf;
-    for (let j = 0; j < buf.length; j++) buf[j].y = null;
+    current.bufs.forEach((buf) => {
+      for (let j = 0; j < buf.length; j++) buf[j].y = null;
+    });
     dirtyCharts.add(current.chart);
     current.valueEl.textContent = '--';
   });
@@ -304,15 +313,18 @@ function pushSample(cards, values) {
   const tabPrefix = cards.length > 0 ? cards[0].cardId.split('-')[0] : null;
   const tabVisible = tabPrefix === 'live' ? activeTab === 'live' : activeTab === 'recordings';
 
-  values.forEach((value, i) => {
-    const current = cards[i];
+  cards.forEach((current) => {
     if (!current) return;
 
-    // In-place circular shift — zero allocations
-    const buf = current.buf;
-    const n = buf.length;
-    for (let j = 0; j < n - 1; j++) buf[j].y = buf[j + 1].y;
-    buf[n - 1].y = value;
+    current.bufs.forEach((buf, datasetIndex) => {
+      const seriesIndex = current.seriesIndices[datasetIndex];
+      const nextValue = values[seriesIndex];
+
+      // In-place circular shift — zero allocations
+      const n = buf.length;
+      for (let j = 0; j < n - 1; j++) buf[j].y = buf[j + 1].y;
+      buf[n - 1].y = nextValue;
+    });
 
     if (tabVisible) {
       if (!current.rowHidden && !current.bodyEl.classList.contains('collapsed')) {
@@ -320,7 +332,14 @@ function pushSample(cards, values) {
       }
     }
 
-    current.valueEl.textContent = Number(value).toFixed(4);
+    const latestValues = current.seriesIndices.map((seriesIndex) => values[seriesIndex]);
+    if (latestValues.some((v) => v === null || v === undefined)) {
+      current.valueEl.textContent = '--';
+    } else {
+      current.valueEl.textContent = latestValues.length === 1
+        ? Number(latestValues[0]).toFixed(4)
+        : latestValues.map((v) => Number(v).toFixed(4)).join(' / ');
+    }
   });
 
   if (tabVisible) scheduleRender();
@@ -400,13 +419,24 @@ function replayToIndex(targetIndex) {
   const slice = replayRecording.samples.slice(sliceStart, finalIndex);
   const pad = MAX_POINTS - slice.length;
 
-  replayCards.forEach((current, i) => {
-    const buf = current.buf;
-    for (let j = 0; j < pad; j++) buf[j].y = null;
-    for (let j = 0; j < slice.length; j++) buf[pad + j].y = slice[j].values[i];
+  replayCards.forEach((current) => {
+    current.bufs.forEach((buf, datasetIndex) => {
+      const seriesIndex = current.seriesIndices[datasetIndex];
+      for (let j = 0; j < pad; j++) buf[j].y = null;
+      for (let j = 0; j < slice.length; j++) buf[pad + j].y = slice[j].values[seriesIndex];
+    });
 
-    const lastVal = slice.length > 0 ? slice[slice.length - 1].values[i] : null;
-    current.valueEl.textContent = lastVal !== null ? Number(lastVal).toFixed(4) : '--';
+    if (slice.length > 0) {
+      const lastSample = slice[slice.length - 1];
+      const latestValues = current.seriesIndices.map((seriesIndex) => lastSample.values[seriesIndex]);
+      current.valueEl.textContent = latestValues.some((v) => v === null || v === undefined)
+        ? '--'
+        : latestValues.length === 1
+          ? Number(latestValues[0]).toFixed(4)
+          : latestValues.map((v) => Number(v).toFixed(4)).join(' / ');
+    } else {
+      current.valueEl.textContent = '--';
+    }
 
     if (!current.rowHidden && !current.bodyEl.classList.contains('collapsed')) dirtyCharts.add(current.chart);
   });
@@ -692,6 +722,10 @@ socket.on('sensor-data', (packet) => {
   }
 
   if (!packet || !Array.isArray(packet.values)) {
+    return;
+  }
+
+  if (packet.values.length < SERIES_NAMES.length) {
     return;
   }
 

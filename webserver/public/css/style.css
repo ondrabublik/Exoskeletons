@@ -396,7 +396,7 @@ h1 {
 
 .row-cards.cols-1 { grid-template-columns: 1fr; }
 .row-cards.cols-2 { grid-template-columns: 1fr 1fr; }
-.row-cards.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.row-cards.cols-3 { grid-template-columns: repeat(3, 1fr); }
 
 .row-section.row-hidden .row-cards {
   display: none;
@@ -410,7 +410,7 @@ h1 {
 /* Per-layout chart heights */
 .dashboard.layout-1col .chart-wrap { height: 200px; }
 .dashboard.layout-2col .chart-wrap { height: 180px; }
-.dashboard.layout-4col .chart-wrap { height: 155px; }
+.dashboard.layout-3col .chart-wrap { height: 165px; }
 
 /* Fullscreen */
 .chart-card:fullscreen,
