@@ -3,8 +3,9 @@
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-#include <MadgwickAHRS.h>
+#include <ESP32Servo.h>
 #include <Arduino.h>
+#include <math.h>
 #include "model.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -34,12 +35,17 @@ bool predictionEnabled = true;  // false = bez neuronové sítě
 
 // _________________ wifi, UDP ______________________________________________
 // nastavenní WiFi a UDP
-const char* ssid = "hpwifi";
-const char* password = "password";
+// const char* ssid = "hpwifi";
+// const char* password = "password";
+const char* ssid = "AimtecHackathon2026";
+const char* password = "Kdyzkodpomaha";
 
-const char* serverIP = "192.168.0.141";
-const int serverPort = 8888;
+// const char* serverIP = "192.168.0.141";
+// const int serverPort = 8888;
 const int localPort = 8889;
+
+const char* serverIP = "192.168.30.86";
+const int serverPort = 9999;
 
 WiFiUDP Udp;
 
@@ -61,9 +67,7 @@ const int MUSCLE_BUTTON_PIN = 19;
 const int SERVO_PIN = 12;
 const int lock = 180;
 const int unlock = 0;
-const int SERVO_PWM_FREQ = 50;
-const int SERVO_PWM_RESOLUTION = 12;
-const int SERVO_PWM_CHANNEL = 0;
+Servo doorServo;
 
 // motor pin (PWM)
 const int MOTOR_PIN = 25;
@@ -83,12 +87,10 @@ int ledState = LOW;  // 0 nebo 1 příchozí binární packet
 Adafruit_MPU6050 mpu1;
 Adafruit_MPU6050 mpu2;
 
-// two filters
-Madgwick filter1;
-Madgwick filter2;
-
 float gx1, gy1, gz1;
 float gx2, gy2, gz2;
+float ax1, ay1, az1;
+float ax2, ay2, az2;
 
 // frekvence IMU
 const float imuFreq = 50.0;
@@ -102,14 +104,6 @@ const unsigned long logicPeriod = 100000;  // 100 ms v mikrosekundách
 // FreeRTOS task handles
 TaskHandle_t task1Handle = NULL;
 TaskHandle_t task2Handle = NULL;
-
-static uint32_t servoAngleToDuty(float angle) {
-  float clamped = constrain(angle, 0.0f, 180.0f);
-  float pulseUs = 500.0f + (clamped / 180.0f) * 2000.0f;  // 500-2500 us
-  float periodUs = 1000000.0f / SERVO_PWM_FREQ;            // 50 Hz -> 20000 us
-  float maxDuty = (1 << SERVO_PWM_RESOLUTION) - 1;
-  return (uint32_t)((pulseUs / periodUs) * maxDuty);
-}
 
 static uint32_t motorIntensityToDuty(float intensity) {
   float clamped = constrain(intensity, 0.0f, 1.0f);
@@ -175,9 +169,6 @@ void setup() {
     }
   }
   
-  // Madgwick filtry
-  filter1.begin(imuFreq);
-  filter2.begin(imuFreq);
   // __________ MPU6050 sensors _______________________________________________
 
   // __________ potenciometer, motor, button __________________________________
@@ -188,9 +179,9 @@ void setup() {
   ledcSetup(MOTOR_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
   ledcAttachPin(MOTOR_PIN, MOTOR_PWM_CHANNEL);
   ledcWrite(MOTOR_PWM_CHANNEL, 0);
-  ledcSetup(SERVO_PWM_CHANNEL, SERVO_PWM_FREQ, SERVO_PWM_RESOLUTION);
-  ledcAttachPin(SERVO_PIN, SERVO_PWM_CHANNEL);
-  ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
+  doorServo.setPeriodHertz(50);
+  doorServo.attach(SERVO_PIN, 500, 2500);
+  doorServo.write(unlock);
 
   // Muscle button pin
   pinMode(MUSCLE_BUTTON_PIN, INPUT_PULLUP);
@@ -243,7 +234,7 @@ void setup() {
     "Task1_IMU",        // Jméno tasku
     4096,               // Stack size
     NULL,               // Parametry
-    2,                  // Priorita
+    1,                  // Priorita
     &task1Handle,       // Task handle
     1                   // Core 0
   );
@@ -254,7 +245,7 @@ void setup() {
     "Task2_Logic",      // Jméno tasku
     8192,               // Stack size
     NULL,               // Parametry
-    1,                  // Priorita
+    2,                  // Priorita
     &task2Handle,       // Task handle
     0                   // Core 1
   );
@@ -263,7 +254,7 @@ void setup() {
 }
 
 void task1IMU(void *pvParameters) {
-  // Task 1: Čtení IMU senzorů a aktualizace filtrů
+  // Task 1: Čtení IMU senzorů
   unsigned long lastIMUTime = 0;
   
   while (1) {
@@ -288,24 +279,12 @@ void task1IMU(void *pvParameters) {
       gy2 = g2.gyro.y * 57.2958;
       gz2 = g2.gyro.z * 57.2958;
 
-      // aktualizace filtrů
-      filter1.updateIMU(
-        gx1,
-        gy1,
-        gz1,
-        a1.acceleration.x,
-        a1.acceleration.y,
-        a1.acceleration.z
-      );
-
-      filter2.updateIMU(
-        gx2,
-        gy2,
-        gz2,
-        a2.acceleration.x,
-        a2.acceleration.y,
-        a2.acceleration.z
-      );
+      ax1 = a1.acceleration.x;
+      ay1 = a1.acceleration.y;
+      az1 = a1.acceleration.z;
+      ax2 = a2.acceleration.x;
+      ay2 = a2.acceleration.y;
+      az2 = a2.acceleration.z;
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
@@ -328,8 +307,8 @@ void task2Logic(void *pvParameters) {
       // čtení muscle button
       float muscleButton = digitalRead(MUSCLE_BUTTON_PIN) ? 1.0 : 0.0;  // 1.0 stisknuto, 0.0 nestisknuto
 
-      float roll1  = filter1.getRoll();
-      float roll2  = filter2.getRoll();
+      float roll1 = atan2(ay1, az1) * 57.2958f;
+      float roll2 = atan2(ay2, az2) * 57.2958f;
 
       // Spuštění inference (pouze pokud je povolena predikce)
       float prediction = 0.0;
@@ -352,11 +331,11 @@ void task2Logic(void *pvParameters) {
 
           if (prediction > 0.9f && angleValue >= angleMin && angleValue <= angleMax) {
             ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(MOTOR_INTENSITY));
-            ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(lock));
+            doorServo.write(lock);
             digitalWrite(LED_PIN, HIGH);
           } else {
             ledcWrite(MOTOR_PWM_CHANNEL, 0);
-            ledcWrite(SERVO_PWM_CHANNEL, servoAngleToDuty(unlock));
+            doorServo.write(unlock);
             digitalWrite(LED_PIN, LOW);
           }
         }
