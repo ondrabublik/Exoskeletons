@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Sensor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111; color: #eee; font-family: 'Segoe UI', sans-serif; padding: 16px; }
+
+    h1 { margin-bottom: 12px; font-size: 1.4rem; color: #4fc3f7; letter-spacing: 1px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; flex-shrink: 0; }
+    .dot.connected    { background: #4caf50; box-shadow: 0 0 6px #4caf5088; }
+    .dot.disconnected { background: #f44336; }
+    #freq-display { margin-left: auto; color: #666; font-variant-numeric: tabular-nums; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 10px;
+    }
+
+    .chart-card {
+      background: #1a1a1a;
+      border: 1px solid #2e2e2e;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: box-shadow 0.2s;
+    }
+    .chart-card.expanded { grid-column: 1 / -1; }
+    .chart-card:hover { box-shadow: 0 0 0 1px #3e3e3e; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      background: #222;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid #2e2e2e;
+    }
+    .card-header:hover { background: #272727; }
+
+    .card-title { font-size: 0.9rem; font-weight: 600; flex: 1; }
+    .card-value {
+      font-family: 'Consolas', monospace;
+      font-size: 0.82rem;
+      color: #aaa;
+      min-width: 72px;
+      text-align: right;
+    }
+
+    .btn-icon {
+      background: none;
+      border: 1px solid #3a3a3a;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+      padding: 1px 7px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-icon:hover { border-color: #4fc3f7; color: #4fc3f7; }
+
+    .card-body { padding: 6px 8px 8px; position: relative; }
+    .card-body.collapsed { display: none; }
+
+    /* canvas height via wrapper */
+    .chart-wrap { position: relative; height: 130px; }
+    .chart-card.expanded .chart-wrap { height: 260px; }
+  </style>
+</head>
+<body>
+  <h1>Live Sensor Dashboard</h1>
+
+  <div class="toolbar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Connecting…</span>
+    <span id="freq-display"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    const CHANNEL_NAMES = ['Angle', 'Pitch 1', 'Pitch Rate 1', 'Pitch 2', 'Pitch Rate 2', 'Input', 'Prediction'];
+    const COLORS        = ['#4fc3f7', '#81c784', '#ffb74d', '#f06292', '#ba68c8', '#4db6ac', '#fff176'];
+    const MAX_POINTS    = 300; // rolling window
+
+    // ── Build cards ────────────────────────────────────────────────
+    const grid  = document.getElementById('grid');
+    const cards = CHANNEL_NAMES.map((name, i) => {
+      const color = COLORS[i];
+
+      const card = document.createElement('div');
+      card.className = 'chart-card';
+      card.innerHTML = `
+        <div class="card-header" data-idx="${i}">
+          <span class="card-title" style="color:${color}">${name}</span>
+          <span class="card-value" id="val-${i}">—</span>
+          <button class="btn-icon" id="exp-${i}" title="Expand / contract">⤢</button>
+          <button class="btn-icon" id="col-${i}" title="Collapse / expand">▾</button>
+        </div>
+        <div class="card-body" id="body-${i}">
+          <div class="chart-wrap">
+            <canvas id="canvas-${i}"></canvas>
+          </div>
+        </div>`;
+      grid.appendChild(card);
+
+      const ctx   = document.getElementById(`canvas-${i}`).getContext('2d');
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            data: [],
+            borderColor: color,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+          }]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: { type: 'linear', display: false },
+            y: {
+              ticks: { color: '#666', maxTicksLimit: 5, font: { size: 10 } },
+              grid:  { color: '#242424' },
+            }
+          }
+        }
+      });
+
+      // Expand / contract full-width
+      document.getElementById(`exp-${i}`).addEventListener('click', (e) => {
+        e.stopPropagation();
+        const expanded = card.classList.toggle('expanded');
+        document.getElementById(`exp-${i}`).textContent = expanded ? '⤡' : '⤢';
+        chart.resize();
+      });
+
+      // Collapse / restore body
+      document.getElementById(`col-${i}`).addEventListener('click', (e) => {
+        e.stopPropagation();
+        const body = document.getElementById(`body-${i}`);
+        const collapsed = body.classList.toggle('collapsed');
+        document.getElementById(`col-${i}`).textContent = collapsed ? '▸' : '▾';
+      });
+
+      // Click header also toggles collapse
+      card.querySelector('.card-header').addEventListener('click', (e) => {
+        if (e.target.classList.contains('btn-icon')) return;
+        document.getElementById(`col-${i}`).click();
+      });
+
+      return { card, chart };
+    });
+
+    // ── Socket + real-time feed ─────────────────────────────────────
+    let sampleCount = 0;
+    let freqTimer   = performance.now();
+    let freqEst     = null;
+
+    const socket = io('http://localhost:3000');
+
+    socket.on('connect', () => {
+      document.getElementById('status-dot').className  = 'dot connected';
+      document.getElementById('status-text').textContent = 'Connected';
+    });
+    socket.on('disconnect', () => {
+      document.getElementById('status-dot').className  = 'dot disconnected';
+      document.getElementById('status-text').textContent = 'Disconnected';
+      document.getElementById('freq-display').textContent = '';
+    });
+
+    socket.on('sensor-data', (values) => {
+      // Update frequency estimate once per second
+      sampleCount++;
+      const now = performance.now();
+      const dt  = now - freqTimer;
+      if (dt >= 1000) {
+        const hz  = (sampleCount / dt) * 1000;
+        freqEst   = freqEst === null ? hz : freqEst * 0.7 + hz * 0.3;
+        document.getElementById('freq-display').textContent = `${freqEst.toFixed(1)} Hz`;
+        sampleCount = 0;
+        freqTimer   = now;
+      }
+
+      // Push new data into each chart
+      values.forEach((val, i) => {
+        const { chart } = cards[i];
+        const dataset   = chart.data.datasets[0];
+        const x         = dataset.data.length ? dataset.data[dataset.data.length - 1].x + 1 : 0;
+        dataset.data.push({ x, y: val });
+        if (dataset.data.length > MAX_POINTS) dataset.data.shift();
+
+        const body = document.getElementById(`body-${i}`);
+        if (!body.classList.contains('collapsed')) {
+          chart.update('none');
+        }
+
+        document.getElementById(`val-${i}`).textContent = val.toFixed(4);
+      });
+    });
+  </script>
+</body>
+</html>
