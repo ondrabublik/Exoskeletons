@@ -32,12 +32,11 @@ from tensorflow import keras
 from data_loader import build_dataset, WINDOW
 
 OUT_DIR = os.path.dirname(__file__)
-PLOT_DIR = os.path.join(OUT_DIR, "plots")
-os.makedirs(PLOT_DIR, exist_ok=True)
+# plots and models live inside  NN/<name>/
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
-def plot_history(history, name: str):
+def plot_history(history, name: str, plot_dir: str):
     metrics = ["loss", "accuracy", "auc"]
     fig, axes = plt.subplots(1, len(metrics), figsize=(14, 4))
     for ax, m in zip(axes, metrics):
@@ -50,25 +49,25 @@ def plot_history(history, name: str):
         ax.legend()
     fig.suptitle(f"{name} – training history")
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, f"{name}_history.png")
+    path = os.path.join(plot_dir, "history.png")
     fig.savefig(path, dpi=120)
     plt.close(fig)
     print(f"Saved: {path}")
 
 
-def plot_confusion(y_true, y_pred_bin, name: str):
+def plot_confusion(y_true, y_pred_bin, name: str, plot_dir: str):
     cm = confusion_matrix(y_true, y_pred_bin)
     disp = ConfusionMatrixDisplay(cm, display_labels=["OFF", "ON"])
     fig, ax = plt.subplots(figsize=(5, 4))
     disp.plot(ax=ax, colorbar=False)
     ax.set_title(f"{name} – confusion matrix (test set)")
-    path = os.path.join(PLOT_DIR, f"{name}_confusion.png")
+    path = os.path.join(plot_dir, "confusion.png")
     fig.savefig(path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {path}")
 
 
-def plot_roc_pr(y_true, y_score, name: str):
+def plot_roc_pr(y_true, y_score, name: str, plot_dir: str):
     fpr, tpr, _ = roc_curve(y_true, y_score)
     roc_auc      = auc(fpr, tpr)
     prec, rec, _ = precision_recall_curve(y_true, y_score)
@@ -90,13 +89,13 @@ def plot_roc_pr(y_true, y_score, name: str):
     ax2.legend()
 
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, f"{name}_roc_pr.png")
+    path = os.path.join(plot_dir, "roc_pr.png")
     fig.savefig(path, dpi=120)
     plt.close(fig)
     print(f"Saved: {path}")
 
 
-def plot_predictions(y_true, y_score, name: str, n_samples: int = 300):
+def plot_predictions(y_true, y_score, name: str, plot_dir: str, n_samples: int = 300):
     """Show raw model output vs ground-truth label over time."""
     idx = np.arange(min(n_samples, len(y_true)))
     fig, ax = plt.subplots(figsize=(14, 3))
@@ -110,7 +109,7 @@ def plot_predictions(y_true, y_score, name: str, n_samples: int = 300):
     ax.set_title(f"{name} – prediction timeline (first {n_samples} test windows)")
     ax.legend()
     fig.tight_layout()
-    path = os.path.join(PLOT_DIR, f"{name}_timeline.png")
+    path = os.path.join(plot_dir, "timeline.png")
     fig.savefig(path, dpi=120)
     plt.close(fig)
     print(f"Saved: {path}")
@@ -118,13 +117,17 @@ def plot_predictions(y_true, y_score, name: str, n_samples: int = 300):
 
 # ── main ────────────────────────────────────────────────────────────────────
 def evaluate(name: str):
+    # Per-model folder: NN/cnn/  or  NN/dense/
+    model_dir = os.path.join(OUT_DIR, name)
+    os.makedirs(model_dir, exist_ok=True)
+
     # Load data (same seed → identical test split)
     _, _, (X_test, y_test) = build_dataset()
 
-    # Load model
-    model_path = os.path.join(OUT_DIR, f"{name}_best.keras")
+    # Load model – prefer best checkpoint, fall back to final
+    model_path = os.path.join(model_dir, "best.keras")
     if not os.path.exists(model_path):
-        model_path = os.path.join(OUT_DIR, f"{name}_final.keras")
+        model_path = os.path.join(model_dir, "final.keras")
     print(f"Loading {model_path} …")
     model = keras.models.load_model(model_path)
 
@@ -137,12 +140,12 @@ def evaluate(name: str):
     print(classification_report(y_test, y_pred, target_names=["OFF", "ON"],
                                  zero_division=0))
 
-    # Plots
-    plot_confusion(y_test, y_pred, name)
-    plot_roc_pr(y_test, y_score, name)
-    plot_predictions(y_test, y_score, name)
+    # Plots – all go into the model folder
+    plot_confusion(y_test, y_pred, name, model_dir)
+    plot_roc_pr(y_test, y_score, name, model_dir)
+    plot_predictions(y_test, y_score, name, model_dir)
 
-    print(f"\nAll plots saved to: {PLOT_DIR}")
+    print(f"\nAll plots saved to: {model_dir}")
 
 
 if __name__ == "__main__":

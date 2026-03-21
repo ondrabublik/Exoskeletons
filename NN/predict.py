@@ -27,10 +27,11 @@ OUT_DIR = os.path.dirname(__file__)
 
 
 def stream_predict(model_name: str, txt_file: str, threshold: float = 0.5):
-    # Load model
-    model_path = os.path.join(OUT_DIR, f"{model_name}_best.keras")
+    # Load model from  NN/<model_name>/  folder
+    model_dir  = os.path.join(OUT_DIR, model_name)
+    model_path = os.path.join(model_dir, "best.keras")
     if not os.path.exists(model_path):
-        model_path = os.path.join(OUT_DIR, f"{model_name}_final.keras")
+        model_path = os.path.join(model_dir, "final.keras")
     model = keras.models.load_model(model_path)
     print(f"Model: {model_path}")
     print(f"Threshold: {threshold}")

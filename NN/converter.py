@@ -2,11 +2,15 @@
 converter.py
 ------------
 Converts a saved Keras model (.h5) to:
-  - <name>.tflite   – TensorFlow Lite flatbuffer
-  - <name>.h        – C header for embedding on ESP32
+  - model.tflite   – TensorFlow Lite flatbuffer  (always this name)
+  - model.h        – C header for embedding on ESP32  (always this name)
+
+The output files are always named model.tflite / model.h so the ESP32
+firmware can include them with a fixed path regardless of which variant
+(cnn_best, dense_final, …) was trained.
 
 Can be used as a module (convert_model) or run standalone:
-    python converter.py --model cnn_final.h5 --out model
+    python converter.py --model cnn/best.h5 --out cnn/
 """
 
 import argparse
@@ -17,6 +21,9 @@ import tensorflow as tf
 def convert_model(h5_path: str, out_dir: str | None = None) -> tuple[str, str]:
     """
     Convert a .h5 Keras model to TFLite and a C header file.
+
+    Output files are always named  model.tflite  and  model.h
+    inside out_dir so the ESP32 project always includes the same filenames.
 
     Parameters
     ----------
@@ -33,9 +40,10 @@ def convert_model(h5_path: str, out_dir: str | None = None) -> tuple[str, str]:
     if out_dir is None:
         out_dir = os.path.dirname(os.path.abspath(h5_path))
 
-    base = os.path.splitext(os.path.basename(h5_path))[0]   # e.g. "cnn_final"
-    tflite_path = os.path.join(out_dir, f"{base}.tflite")
-    header_path = os.path.join(out_dir, f"{base}.h")
+    os.makedirs(out_dir, exist_ok=True)
+
+    tflite_path = os.path.join(out_dir, "model.tflite")
+    header_path = os.path.join(out_dir, "model.h")
 
     # ── 1. Convert to TFLite ───────────────────────────────────────────────
     print(f"Converting {h5_path} → {tflite_path} …")
@@ -54,8 +62,7 @@ def convert_model(h5_path: str, out_dir: str | None = None) -> tuple[str, str]:
 
     with open(header_path, "w") as f:
         f.write("#pragma once\n\n")
-        array_name = base.replace("-", "_")
-        f.write(f"const unsigned char {array_name}_tflite[] = {{\n")
+        f.write("const unsigned char model_tflite[] = {\n")
         for i, byte in enumerate(data):
             if i % 12 == 0:
                 f.write("  ")
@@ -63,7 +70,7 @@ def convert_model(h5_path: str, out_dir: str | None = None) -> tuple[str, str]:
             if i % 12 == 11:
                 f.write("\n")
         f.write("\n};\n")
-        f.write(f"const unsigned int {array_name}_tflite_len = {len(data)};\n")
+        f.write(f"const unsigned int model_tflite_len = {len(data)};\n")
     print(f"C header saved → {header_path}")
 
     return tflite_path, header_path

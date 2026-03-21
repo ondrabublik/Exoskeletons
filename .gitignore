@@ -74,3 +74,5 @@ desktop.ini
 *.swo
 
 *.h
+NN/cnn
+NN/dense

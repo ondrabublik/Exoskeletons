@@ -28,13 +28,12 @@ from converter import convert_model
 EPOCHS        = 200
 BATCH_SIZE    = 32
 LEARNING_RATE = 1e-3
-OUT_DIR  = os.path.dirname(__file__)
-PLOT_DIR = os.path.join(OUT_DIR, "plots")
-os.makedirs(PLOT_DIR, exist_ok=True)
+BASE_DIR = os.path.dirname(__file__)   # NN/
+# Each model gets its own subfolder: NN/cnn/  or  NN/dense/
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def plot_training(history: keras.callbacks.History, name: str):
+def plot_training(history: keras.callbacks.History, name: str, out_dir: str):
     """
     Save two diagnostic plots after training:
 
@@ -66,7 +65,7 @@ def plot_training(history: keras.callbacks.History, name: str):
         ax.grid(True, alpha=0.3)
     fig.suptitle(f"{name.upper()} – training curves", fontsize=13)
     fig.tight_layout()
-    path1 = os.path.join(PLOT_DIR, f"{name}_training_curves.png")
+    path1 = os.path.join(out_dir, "training_curves.png")
     fig.savefig(path1, dpi=120)
     plt.close(fig)
     print(f"Plot saved → {path1}")
@@ -104,7 +103,7 @@ def plot_training(history: keras.callbacks.History, name: str):
 
     fig.suptitle(f"{name.upper()} – overfitting diagnostic", fontsize=13)
     fig.tight_layout()
-    path2 = os.path.join(PLOT_DIR, f"{name}_overfit_gap.png")
+    path2 = os.path.join(out_dir, "overfit_gap.png")
     fig.savefig(path2, dpi=120)
     plt.close(fig)
     print(f"Plot saved → {path2}")
@@ -122,9 +121,9 @@ def compute_class_weight(y_train: np.ndarray) -> dict:
     return {0: w0, 1: w1}
 
 
-def get_callbacks(name: str) -> list:
-    ckpt_path    = os.path.join(OUT_DIR, f"{name}_best.keras")
-    ckpt_path_h5 = os.path.join(OUT_DIR, f"{name}_best.h5")
+def get_callbacks(name: str, out_dir: str) -> list:
+    ckpt_path    = os.path.join(out_dir, "best.keras")
+    ckpt_path_h5 = os.path.join(out_dir, "best.h5")
     return [
         keras.callbacks.ModelCheckpoint(
             ckpt_path,
@@ -164,6 +163,10 @@ def train_model(model: keras.Model, name: str,
     X_val,   y_val   = val_data
     X_test,  y_test  = test_data
 
+    # ── Per-model output folder:  NN/cnn/  or  NN/dense/ ──────────────────
+    out_dir = os.path.join(BASE_DIR, name)
+    os.makedirs(out_dir, exist_ok=True)
+
     compile_model(model, learning_rate=LEARNING_RATE)
     model.summary()
 
@@ -173,7 +176,7 @@ def train_model(model: keras.Model, name: str,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
         class_weight=class_weight,
-        callbacks=get_callbacks(name),
+        callbacks=get_callbacks(name, out_dir),
         verbose=1,
     )
 
@@ -183,26 +186,31 @@ def train_model(model: keras.Model, name: str,
     for mname, val in zip(model.metrics_names, results):
         print(f"  {mname}: {val:.4f}")
 
-    # ── Save final weights and SavedModel ─────────────────────────────────
-    keras_path = os.path.join(OUT_DIR, f"{name}_final.keras")
+    # ── Save final weights ─────────────────────────────────────────────────
+    keras_path = os.path.join(out_dir, "final.keras")
     model.save(keras_path)
     print(f"Model saved → {keras_path}")
 
-    h5_path = os.path.join(OUT_DIR, f"{name}_final.h5")
+    h5_path = os.path.join(out_dir, "final.h5")
     model.save(h5_path)
-    print(f"Model saved → {h5_path}  (HDF5 / legacy format)")
-    convert_model(h5_path, OUT_DIR)
+    print(f"Model saved → {h5_path}  (HDF5)")
 
-    best_h5_path = os.path.join(OUT_DIR, f"{name}_best.h5")
+    # ── Convert final model → model.tflite + model.h ──────────────────────
+    convert_model(h5_path, out_dir)
+
+    # ── Also convert best checkpoint if present ───────────────────────────
+    best_h5_path = os.path.join(out_dir, "best.h5")
     if os.path.exists(best_h5_path):
-        convert_model(best_h5_path, OUT_DIR)
+        best_out_dir = os.path.join(out_dir, "best")
+        convert_model(best_h5_path, best_out_dir)
 
-    saved_model_dir = os.path.join(OUT_DIR, f"{name}_saved_model")
+    # ── SavedModel export ─────────────────────────────────────────────────
+    saved_model_dir = os.path.join(out_dir, "saved_model")
     model.export(saved_model_dir)
     print(f"SavedModel  → {saved_model_dir}")
 
     # ── Training plots ─────────────────────────────────────────────────────
-    plot_training(history, name)
+    plot_training(history, name, out_dir)
 
     return history
 
