@@ -142,14 +142,14 @@ def get_callbacks(name: str, out_dir: str) -> list:
         keras.callbacks.EarlyStopping(
             monitor="val_auc",
             mode="max",
-            patience=15,
+            patience=100,
             restore_best_weights=True,
             verbose=1,
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss",
             factor=0.5,
-            patience=7,
+            patience=30,
             min_lr=1e-6,
             verbose=1,
         ),
