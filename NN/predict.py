@@ -6,10 +6,10 @@ Minimal inference script – mimics what will run on the ESP32:
   2. Feed the window to the model and output ON / OFF.
 
 Data must already be Min-Max normalised (run normalize_data.py first).
-Input columns per row: angle, x, y, z, omx, label  (6 columns)
+Input CSV columns (with header): angle,x,y,z,omx,label
 
 Run as a standalone demo:
-    python predict.py --model cnn --file DATA/RPAPAMEO.TXT
+    python predict.py --model cnn --file DATA_NORMALIZED/2026-03-21T09-57-02-714Z.csv
 
 The script streams through the chosen file sample-by-sample,
 exactly as the microcontroller would receive data in real time.
@@ -46,8 +46,14 @@ def stream_predict(model_name: str, txt_file: str, threshold: float = 0.5):
     total   = 0
 
     with open(txt_file, "r") as fh:
-        for line in fh:
-            parts = line.strip().split(",")
+        for line_no, line in enumerate(fh):
+            line = line.strip()
+            if not line:
+                continue
+            # Skip header row (contains non-numeric first field)
+            if line_no == 0 and not line[0].replace('-', '').replace('.', '').isdigit():
+                continue
+            parts = line.split(",")
             if len(parts) != 6:   # angle, x, y, z, omx, label
                 continue
             try:
@@ -87,7 +93,7 @@ def stream_predict(model_name: str, txt_file: str, threshold: float = 0.5):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["dense", "cnn"], default="cnn")
-    parser.add_argument("--file",  default=os.path.join("DATA", "RPAPAMEO.TXT"))
+    parser.add_argument("--file",  default=os.path.join("DATA_NORMALIZED", "2026-03-21T09-57-02-714Z.csv"))
     parser.add_argument("--threshold", type=float, default=0.5)
     args = parser.parse_args()
     stream_predict(args.model, args.file, args.threshold)

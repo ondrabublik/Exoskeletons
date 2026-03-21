@@ -1,11 +1,20 @@
 """
 data_loader.py
 --------------
-Loads all TXT files from the DATA folder, builds windowed
+Loads all CSV files from the DATA folder, builds windowed
 sequences and returns train/val/test splits ready for both Dense and CNN models.
-    angle, x, y, z, omx, label
-Sampling is done with a sliding window so the network sees a short
-temporal context instead of a single snapshot.
+
+Expected CSV format (with header):
+    timestamp,Angle,Pitch 1,Pitch Rate 1,Pitch 2,Pitch Rate 2,Input,Prediction
+
+Column mapping:
+    Angle        → angle
+    Pitch 1      → Pitch1
+    Pitch Rate 1 → PitchRate1
+    Pitch 2      → Pitch2
+    Pitch Rate 2 → PitchRate2
+    Input        → label   (0/1)
+    timestamp, Prediction  → ignored
 """
 
 import os
@@ -15,8 +24,21 @@ from sklearn.model_selection import train_test_split
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 DATA_DIR   = os.path.join(os.path.dirname(__file__), "DATA")
-COLUMNS    = ["angle", "x", "y", "z", "omx", "label"]
-FEATURES   = ["angle", "x", "y", "z", "omx"]
+
+# Raw CSV columns → internal names (timestamp and Prediction are dropped)
+CSV_COLUMNS = ["timestamp", "Angle", "Pitch 1", "Pitch Rate 1",
+               "Pitch 2", "Pitch Rate 2", "Input", "Prediction"]
+RENAME_MAP  = {
+    "Angle":        "angle",
+    "Pitch 1":      "Pitch1",
+    "Pitch Rate 1": "PitchRate1",
+    "Pitch 2":      "Pitch2",
+    "Pitch Rate 2": "PitchRate2",
+    "Input":        "label",
+}
+
+COLUMNS    = ["angle", "Pitch1", "PitchRate1", "Pitch2", "PitchRate2", "label"]
+FEATURES   = ["angle", "Pitch1", "PitchRate1", "Pitch2", "PitchRate2"]
 WINDOW     = 20      # number of time-steps fed to the network at once
 STEP       = 1       # sliding-window stride – use 1 for maximum samples (full overlap)
                      # increase (e.g. 5) only if you have a very large dataset and want faster training
@@ -24,24 +46,30 @@ STEP       = 1       # sliding-window stride – use 1 for maximum samples (full
 
 
 def load_raw(data_dir: str = DATA_DIR) -> pd.DataFrame:
-    """Read all TXT files and concatenate them into one DataFrame."""
+    """Read all CSV files and concatenate them into one DataFrame."""
     frames = []
-    txt_files = [f for f in os.listdir(data_dir)
-                 if f.upper().endswith(".TXT")]
-    if not txt_files:
-        raise FileNotFoundError(f"No .TXT files found in {data_dir}")
+    csv_files = [f for f in os.listdir(data_dir)
+                 if f.lower().endswith(".csv")]
+    if not csv_files:
+        raise FileNotFoundError(f"No .csv files found in {data_dir}")
 
-    for fname in sorted(txt_files):
+    for fname in sorted(csv_files):
         path = os.path.join(data_dir, fname)
-        df = pd.read_csv(path, header=None, names=COLUMNS,skipinitialspace=True)
-        # Drop rows that couldn't be parsed (e.g. all-zero glitches)
+        df = pd.read_csv(path, skipinitialspace=True)
+        # Rename to internal names and keep only needed columns
+        df = df.rename(columns=RENAME_MAP)
+        df = df[COLUMNS]
         df = df.dropna()
-        df["source"] = fname          # keep track of origin file
+        df["source"] = fname
         frames.append(df)
-        print(f"  Loaded {fname}: {len(df)} rows, "f"ON={int(df['label'].sum())}, " f"OFF={int((df['label'] == 0).sum())}")
+        print(f"  Loaded {fname}: {len(df)} rows, "
+              f"ON={int(df['label'].sum())}, "
+              f"OFF={int((df['label'] == 0).sum())}")
 
     combined = pd.concat(frames, ignore_index=True)
-    print(f"\nTotal rows: {len(combined)}, " f"ON={int(combined['label'].sum())}, " f"OFF={int((combined['label'] == 0).sum())}")
+    print(f"\nTotal rows: {len(combined)}, "
+          f"ON={int(combined['label'].sum())}, "
+          f"OFF={int((combined['label'] == 0).sum())}")
     return combined
 
 
@@ -110,4 +138,3 @@ def build_dataset(window: int = WINDOW, step: int = STEP,
 
 if __name__ == "__main__":
     build_dataset()
-
