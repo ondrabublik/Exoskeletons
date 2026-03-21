@@ -37,6 +37,7 @@ let replayIndex = 0;
 let replayPlayheadMs = 0;
 let replayLastFrameMs = 0;
 let replayRaf = null;
+let replayMode = 'smooth';
 
 const socket = io('http://192.168.30.86:3000');
 
@@ -338,16 +339,29 @@ function replayFrame(nowMs) {
   replayLastFrameMs = nowMs;
   replayPlayheadMs += deltaMs * speed;
 
-  const firstTs = replayRecording.samples[0].timestamp;
-  while (replayIndex < replayRecording.samples.length) {
-    const sample = replayRecording.samples[replayIndex];
-    const sampleOffset = sample.timestamp - firstTs;
-    if (sampleOffset > replayPlayheadMs) {
-      break;
+  if (replayMode === 'accurate') {
+    const firstTs = replayRecording.samples[0].timestamp;
+    while (replayIndex < replayRecording.samples.length) {
+      const sample = replayRecording.samples[replayIndex];
+      const sampleOffset = sample.timestamp - firstTs;
+      if (sampleOffset > replayPlayheadMs) {
+        break;
+      }
+      pushSample(replayCards, sample.values);
+      replayX += 1;
+      replayIndex += 1;
     }
-    pushSample(replayCards, sample.values);
-    replayX += 1;
-    replayIndex += 1;
+  } else {
+    const sampleIntervalMs = 1000 / Math.max(FREQUENCY_HZ, 0.001);
+    while (replayIndex < replayRecording.samples.length) {
+      const sampleOffset = replayIndex * sampleIntervalMs;
+      if (sampleOffset > replayPlayheadMs) {
+        break;
+      }
+      pushSample(replayCards, replayRecording.samples[replayIndex].values);
+      replayX += 1;
+      replayIndex += 1;
+    }
   }
 
   document.getElementById('replay-scrub').value = String(replayIndex);
@@ -536,6 +550,10 @@ document.getElementById('replay-pause').addEventListener('click', replayPause);
 
 document.getElementById('replay-reset').addEventListener('click', replayReset);
 
+document.getElementById('replay-mode').addEventListener('change', (event) => {
+  replayMode = event.target.value === 'accurate' ? 'accurate' : 'smooth';
+});
+
 document.getElementById('replay-scrub').addEventListener('input', (event) => {
   stopReplayLoop();
   replayToIndex(Number(event.target.value));
@@ -598,6 +616,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('frequency-display').textContent = FREQUENCY_HZ.toFixed(1);
   document.getElementById('max-points-input').value = MAX_POINTS;
   document.getElementById('frequency-input').value = FREQUENCY_HZ;
+  document.getElementById('replay-mode').value = replayMode;
 
   updateRecordingButton();
   requestRecordingsList();

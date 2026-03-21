@@ -41,6 +41,8 @@ const CHANNEL_NAMES = [
 ];
 
 let activeRecording = null;
+const RECORDING_FLUSH_INTERVAL_MS = 100;
+const RECORDING_FLUSH_BYTES = 64 * 1024;
 
 function sanitizeName(name) {
 	if (!name || typeof name !== 'string') {
@@ -153,8 +155,21 @@ function startRecording(customName) {
 		filePath,
 		stream,
 		startedAt: new Date().toISOString(),
-		sampleCount: 0
+		sampleCount: 0,
+		pendingCsv: '',
+		flushTimer: null,
+		startHrNs: process.hrtime.bigint()
 	};
+
+	activeRecording.flushTimer = setInterval(() => {
+		if (!activeRecording || activeRecording.fileName !== fileName) {
+			return;
+		}
+		if (activeRecording.pendingCsv.length > 0) {
+			activeRecording.stream.write(activeRecording.pendingCsv);
+			activeRecording.pendingCsv = '';
+		}
+	}, RECORDING_FLUSH_INTERVAL_MS);
 
 	io.emit('recording:status', getRecordingStatus());
 	return getRecordingStatus();
@@ -168,6 +183,14 @@ function stopRecording() {
 	const recording = activeRecording;
 	activeRecording = null;
 
+	if (recording.flushTimer) {
+		clearInterval(recording.flushTimer);
+		recording.flushTimer = null;
+	}
+	if (recording.pendingCsv.length > 0) {
+		recording.stream.write(recording.pendingCsv);
+		recording.pendingCsv = '';
+	}
 	recording.stream.end();
 	io.emit('recording:status', getRecordingStatus());
 	io.emit('recordings:list', listRecordings());
@@ -199,7 +222,12 @@ udpServer.on('message', (msg) => {
 		};
 
 		if (activeRecording) {
-			activeRecording.stream.write(`${packet.timestamp},${values.join(',')}\n`);
+			const elapsedMs = Number(process.hrtime.bigint() - activeRecording.startHrNs) / 1e6;
+			activeRecording.pendingCsv += `${elapsedMs.toFixed(3)},${values.join(',')}\n`;
+			if (activeRecording.pendingCsv.length >= RECORDING_FLUSH_BYTES) {
+				activeRecording.stream.write(activeRecording.pendingCsv);
+				activeRecording.pendingCsv = '';
+			}
 			activeRecording.sampleCount += 1;
 		}
 
