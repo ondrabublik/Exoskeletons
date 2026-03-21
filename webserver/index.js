@@ -242,7 +242,7 @@ udpServer.bind(9999);
 
 // WebSocket server
 io.on('connection', (socket) => {
-	console.log('Browser connected');
+	console.log(`Browser ${socket.handshake.headers.host} connected`);
 
 	socket.emit('recording:status', getRecordingStatus());
 	socket.emit('recordings:list', listRecordings());
@@ -259,6 +259,10 @@ io.on('connection', (socket) => {
 			}
 		}
 	});
+
+	socket.on('disconnect', (reason) => {
+        console.log(`Browser ${socket.handshake.headers.host} disconnected; Reason: ${reason}`);
+    });
 
 	socket.on('recording:stop', (_payload = {}, callback) => {
 		try {

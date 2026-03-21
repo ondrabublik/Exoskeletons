@@ -21,6 +21,31 @@ const COLORS = [
 
 let MAX_POINTS = 300;
 let FREQUENCY_HZ = 10;
+let currentLayout = '2col';
+
+// ── Grid layout configurations ─────────────────────────────────────────────
+const LAYOUT_CONFIGS = {
+  '1col': {
+    cols: 1,
+    rows: [{ label: null, channels: [0, 1, 2, 3, 4, 5, 6], spanFirst: false }]
+  },
+  '2col': {
+    cols: 2,
+    rows: [
+      { label: 'Angle',   channels: [0],       spanFirst: false },
+      { label: 'Pitch 1', channels: [1, 2],    spanFirst: false },
+      { label: 'Pitch 2', channels: [3, 4],    spanFirst: false },
+      { label: 'Output',  channels: [5, 6],    spanFirst: false }
+    ]
+  },
+  '4col': {
+    cols: 4,
+    rows: [
+      { label: 'Pitch',  channels: [1, 2, 3, 4], spanFirst: false },
+      { label: 'Other',  channels: [0, 5, 6],    spanFirst: true  }
+    ]
+  }
+};
 
 // State
 let liveCards = [];
@@ -43,8 +68,8 @@ const socket = io('http://192.168.30.86:3000');
 
 // Helper functions
 function getTimeLabel(sampleIndex, frequencyHz) {
-  const seconds = (sampleIndex - (MAX_POINTS - 1)) / frequencyHz;
-  return `${seconds.toFixed(1)} s`;
+  const seconds = Math.round((sampleIndex - (MAX_POINTS - 1)) / frequencyHz);
+  return `${seconds} s`;
 }
 
 // ── Render loop ─────────────────────────────────────────────────────────────
@@ -70,19 +95,19 @@ function flushRender() {
   dirtyCharts.clear();
 }
 
-function buildDashboard(gridId, keyPrefix) {
-  const grid = document.getElementById(gridId);
+function buildDashboard(keyPrefix) {
   return CHANNEL_NAMES.map((name, i) => {
     const color = COLORS[i];
     const cardId = `${keyPrefix}-${i}`;
 
     const card = document.createElement('div');
     card.className = 'chart-card';
+    card.dataset.cardId = cardId;
     card.innerHTML = `
       <div class="card-header">
         <span class="card-title" style="color:${color}">${name}</span>
         <span class="card-value" id="val-${cardId}">--</span>
-        <button class="btn-icon" id="exp-${cardId}" title="Expand">Expand</button>
+        <button class="btn-icon" id="fsc-${cardId}" title="Fullscreen">⊞</button>
         <button class="btn-icon" id="col-${cardId}" title="Collapse">Hide</button>
       </div>
       <div class="card-body" id="body-${cardId}">
@@ -90,12 +115,11 @@ function buildDashboard(gridId, keyPrefix) {
           <canvas id="canvas-${cardId}"></canvas>
         </div>
       </div>`;
-    grid.appendChild(card);
 
     // Pre-allocate a fixed buffer of {x,y} objects — never reallocated
-    const buf = Array.from({ length: MAX_POINTS }, (_, i) => ({ x: i, y: null }));
+    const buf = Array.from({ length: MAX_POINTS }, (_, j) => ({ x: j, y: null }));
 
-    const ctx = document.getElementById(`canvas-${cardId}`).getContext('2d');
+    const ctx = card.querySelector('canvas').getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
       data: {
@@ -148,15 +172,17 @@ function buildDashboard(gridId, keyPrefix) {
       }
     });
 
-    const expBtn = document.getElementById(`exp-${cardId}`);
-    const colBtn = document.getElementById(`col-${cardId}`);
-    const body = document.getElementById(`body-${cardId}`);
+    const fscBtn = card.querySelector(`#fsc-${cardId}`);
+    const colBtn = card.querySelector(`#col-${cardId}`);
+    const body  = card.querySelector(`#body-${cardId}`);
 
-    expBtn.addEventListener('click', (event) => {
+    fscBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      const expanded = card.classList.toggle('expanded');
-      expBtn.textContent = expanded ? 'Contract' : 'Expand';
-      chart.resize();
+      if (document.fullscreenElement === card) {
+        document.exitFullscreen();
+      } else if (!document.fullscreenElement) {
+        card.requestFullscreen();
+      }
     });
 
     colBtn.addEventListener('click', (event) => {
@@ -172,7 +198,72 @@ function buildDashboard(gridId, keyPrefix) {
       colBtn.click();
     });
 
-    return { cardId, chart, buf };
+    return { cardId, chart, buf, el: card, rowHidden: false };
+  });
+}
+
+function applyLayout(gridEl, cards, layoutKey) {
+  const config = LAYOUT_CONFIGS[layoutKey];
+  gridEl.innerHTML = '';
+  gridEl.className = `dashboard layout-${layoutKey}`;
+  cards.forEach((c) => { c.rowHidden = false; });
+
+  config.rows.forEach((row) => {
+    const section = document.createElement('div');
+    section.className = 'row-section' + (row.label === null ? ' no-label' : '');
+
+    if (row.label !== null) {
+      const bar = document.createElement('div');
+      bar.className = 'row-bar';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'row-label';
+      labelEl.textContent = row.label;
+      bar.appendChild(labelEl);
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'btn-icon';
+      toggleBtn.textContent = 'Hide';
+      toggleBtn.addEventListener('click', () => {
+        const hidden = section.classList.toggle('row-hidden');
+        toggleBtn.textContent = hidden ? 'Show' : 'Hide';
+        row.channels.forEach((ch) => {
+          if (cards[ch]) cards[ch].rowHidden = hidden;
+        });
+      });
+      bar.appendChild(toggleBtn);
+      section.appendChild(bar);
+    }
+
+    const rowCards = document.createElement('div');
+    rowCards.className = `row-cards cols-${config.cols}`;
+
+    row.channels.forEach((ch, idx) => {
+      const cardObj = cards[ch];
+      if (!cardObj) return;
+      // Single card spanning a multi-col row → full width
+      if (row.channels.length === 1 && config.cols > 1) {
+        cardObj.el.style.gridColumn = '1 / -1';
+      } else if (row.spanFirst && idx === 0) {
+        cardObj.el.style.gridColumn = 'span 2';
+      } else {
+        cardObj.el.style.gridColumn = '';
+      }
+      rowCards.appendChild(cardObj.el);
+    });
+
+    section.appendChild(rowCards);
+    gridEl.appendChild(section);
+  });
+
+  requestAnimationFrame(() => cards.forEach((c) => c.chart.resize()));
+}
+
+function setCurrentLayout(layoutKey) {
+  currentLayout = layoutKey;
+  if (liveCards.length)   applyLayout(document.getElementById('live-grid'),   liveCards,   layoutKey);
+  if (replayCards.length) applyLayout(document.getElementById('replay-grid'), replayCards, layoutKey);
+  document.querySelectorAll('.layout-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.layout === layoutKey);
   });
 }
 
@@ -220,7 +311,7 @@ function pushSample(cards, values) {
 
     if (tabVisible) {
       const body = document.getElementById(`body-${current.cardId}`);
-      if (!body.classList.contains('collapsed')) {
+      if (!current.rowHidden && !body.classList.contains('collapsed')) {
         dirtyCharts.add(current.chart);
       }
     }
@@ -248,7 +339,7 @@ function setTab(tabName) {
     : [];
   cardsToRender.forEach((current) => {
     const body = document.getElementById(`body-${current.cardId}`);
-    if (!body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+    if (!current.rowHidden && !body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
   });
   scheduleRender();
 }
@@ -316,7 +407,7 @@ function replayToIndex(targetIndex) {
       lastVal !== null ? Number(lastVal).toFixed(4) : '--';
 
     const body = document.getElementById(`body-${current.cardId}`);
-    if (!body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+    if (!current.rowHidden && !body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
   });
 
   replayIndex = finalIndex;
@@ -607,10 +698,32 @@ socket.on('sensor-data', (packet) => {
   liveX += 1;
 });
 
+// Layout buttons
+document.querySelectorAll('.layout-btn').forEach((btn) => {
+  btn.addEventListener('click', () => setCurrentLayout(btn.dataset.layout));
+});
+
+// Fullscreen
+document.addEventListener('fullscreenchange', () => {
+  const full = document.fullscreenElement;
+  if (full && full.classList.contains('chart-card')) {
+    const id = full.dataset.cardId;
+    const btn = document.getElementById(`fsc-${id}`);
+    if (btn) btn.textContent = '✕';
+    const found = [...liveCards, ...replayCards].find((c) => c.cardId === id);
+    if (found) requestAnimationFrame(() => found.chart.resize());
+  } else {
+    document.querySelectorAll('[id^="fsc-"]').forEach((btn) => { btn.textContent = '⊞'; });
+    requestAnimationFrame(() => [...liveCards, ...replayCards].forEach((c) => c.chart.resize()));
+  }
+});
+
 // Initialization
 window.addEventListener('DOMContentLoaded', () => {
-  liveCards = buildDashboard('live-grid', 'live');
-  replayCards = buildDashboard('replay-grid', 'replay');
+  liveCards = buildDashboard('live');
+  replayCards = buildDashboard('replay');
+  applyLayout(document.getElementById('live-grid'),   liveCards,   currentLayout);
+  applyLayout(document.getElementById('replay-grid'), replayCards, currentLayout);
 
   document.getElementById('max-points-display').textContent = MAX_POINTS;
   document.getElementById('frequency-display').textContent = FREQUENCY_HZ.toFixed(1);

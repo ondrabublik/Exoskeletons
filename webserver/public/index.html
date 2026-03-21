@@ -7,16 +7,13 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <h1>Exoskeleton Sensor Dashboard</h1>
-
   <div class="tabs">
     <button class="tab-btn active" data-tab="live">Live Data</button>
     <button class="tab-btn" data-tab="recordings">Recordings</button>
     <button class="tab-btn" data-tab="files">Files</button>
   </div>
 
-  <section class="panel active" id="panel-live">
-    <div class="live-settings">
+  <div class="live-settings">
       <div class="setting-group">
         <label for="frequency-input">Frequency (Hz):</label>
         <input
@@ -43,8 +40,17 @@
         />
         <span class="muted" id="max-points-display">300</span>
       </div>
+      <div class="setting-group">
+        <label>Layout:</label>
+        <div class="btn-group" id="layout-selector">
+          <button class="btn-icon layout-btn" data-layout="1col">1</button>
+          <button class="btn-icon layout-btn active" data-layout="2col">2</button>
+          <button class="btn-icon layout-btn" data-layout="4col">4</button>
+        </div>
+      </div>
     </div>
 
+  <section class="panel active" id="panel-live">
     <div class="toolbar">
       <div class="dot" id="status-dot"></div>
       <span class="status" id="status-text">Connecting...</span>
@@ -54,7 +60,7 @@
       <span class="muted grow" id="freq-display"></span>
     </div>
 
-    <div class="grid" id="live-grid"></div>
+    <div id="live-grid"></div>
   </section>
 
   <section class="panel" id="panel-recordings">
@@ -83,7 +89,7 @@
             <button class="button" id="refresh-recordings-2">Refresh</button>
           </div>
     </div>
-    <div class="grid" id="replay-grid"></div>
+    <div id="replay-grid"></div>
   </section>
 
   <!-- FILES TAB -->

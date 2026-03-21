@@ -167,10 +167,6 @@ h1 {
   border-color: #3e6f95;
 }
 
-.chart-card.expanded {
-  grid-column: 1 / -1;
-}
-
 .card-header {
   display: flex;
   align-items: center;
@@ -228,11 +224,7 @@ h1 {
 
 .chart-wrap {
   position: relative;
-  height: 130px;
-}
-
-.chart-card.expanded .chart-wrap {
-  height: 250px;
+  height: 160px;
 }
 
 .live-settings {
@@ -358,4 +350,103 @@ h1 {
 
 .files-table .col-actions a.button {
   text-decoration: none;
+}
+
+/* ── Layout / Row sections ────────────────────────────────────── */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.row-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: #141c24;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  font-size: 0.75rem;
+}
+
+.row-label {
+  flex: 1;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.row-section.no-label .row-bar {
+  display: none;
+}
+
+.row-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.row-cards.cols-1 { grid-template-columns: 1fr; }
+.row-cards.cols-2 { grid-template-columns: 1fr 1fr; }
+.row-cards.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+.row-section.row-hidden .row-cards {
+  display: none;
+}
+
+.row-section.row-hidden .row-bar {
+  border-bottom: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* Per-layout chart heights */
+.dashboard.layout-1col .chart-wrap { height: 200px; }
+.dashboard.layout-2col .chart-wrap { height: 180px; }
+.dashboard.layout-4col .chart-wrap { height: 155px; }
+
+/* Fullscreen */
+.chart-card:fullscreen,
+.chart-card:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+  border-radius: 0;
+}
+
+.chart-card:fullscreen .card-body,
+.chart-card:-webkit-full-screen .card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+
+.chart-card:fullscreen .chart-wrap,
+.chart-card:-webkit-full-screen .chart-wrap {
+  flex: 1;
+  height: auto;
+}
+
+/* Layout selector button group */
+.btn-group {
+  display: flex;
+  gap: 3px;
+}
+
+.btn-group .btn-icon {
+  min-width: 32px;
+}
+
+.btn-group .btn-icon.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #0c2030;
 }
