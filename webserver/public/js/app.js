@@ -22,6 +22,7 @@ const COLORS = [
 let MAX_POINTS = 300;
 let FREQUENCY_HZ = 10;
 let currentLayout = '2col';
+const CHART_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
 
 // ── Grid layout configurations ─────────────────────────────────────────────
 const LAYOUT_CONFIGS = {
@@ -136,6 +137,9 @@ function buildDashboard(keyPrefix) {
       },
       options: {
         animation: false,
+        parsing: false,
+        normalized: true,
+        devicePixelRatio: CHART_DEVICE_PIXEL_RATIO,
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
@@ -174,7 +178,8 @@ function buildDashboard(keyPrefix) {
 
     const fscBtn = card.querySelector(`#fsc-${cardId}`);
     const colBtn = card.querySelector(`#col-${cardId}`);
-    const body  = card.querySelector(`#body-${cardId}`);
+    const body = card.querySelector(`#body-${cardId}`);
+    const valueEl = card.querySelector(`#val-${cardId}`);
 
     fscBtn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -198,7 +203,7 @@ function buildDashboard(keyPrefix) {
       colBtn.click();
     });
 
-    return { cardId, chart, buf, el: card, rowHidden: false };
+    return { cardId, chart, buf, el: card, bodyEl: body, valueEl, rowHidden: false };
   });
 }
 
@@ -289,7 +294,7 @@ function resetDashboard(cards) {
     const buf = current.buf;
     for (let j = 0; j < buf.length; j++) buf[j].y = null;
     dirtyCharts.add(current.chart);
-    document.getElementById(`val-${current.cardId}`).textContent = '--';
+    current.valueEl.textContent = '--';
   });
   scheduleRender();
 }
@@ -310,13 +315,12 @@ function pushSample(cards, values) {
     buf[n - 1].y = value;
 
     if (tabVisible) {
-      const body = document.getElementById(`body-${current.cardId}`);
-      if (!current.rowHidden && !body.classList.contains('collapsed')) {
+      if (!current.rowHidden && !current.bodyEl.classList.contains('collapsed')) {
         dirtyCharts.add(current.chart);
       }
     }
 
-    document.getElementById(`val-${current.cardId}`).textContent = Number(value).toFixed(4);
+    current.valueEl.textContent = Number(value).toFixed(4);
   });
 
   if (tabVisible) scheduleRender();
@@ -338,8 +342,7 @@ function setTab(tabName) {
     : tabName === 'recordings' ? replayCards
     : [];
   cardsToRender.forEach((current) => {
-    const body = document.getElementById(`body-${current.cardId}`);
-    if (!current.rowHidden && !body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+    if (!current.rowHidden && !current.bodyEl.classList.contains('collapsed')) dirtyCharts.add(current.chart);
   });
   scheduleRender();
 }
@@ -403,11 +406,9 @@ function replayToIndex(targetIndex) {
     for (let j = 0; j < slice.length; j++) buf[pad + j].y = slice[j].values[i];
 
     const lastVal = slice.length > 0 ? slice[slice.length - 1].values[i] : null;
-    document.getElementById(`val-${current.cardId}`).textContent =
-      lastVal !== null ? Number(lastVal).toFixed(4) : '--';
+    current.valueEl.textContent = lastVal !== null ? Number(lastVal).toFixed(4) : '--';
 
-    const body = document.getElementById(`body-${current.cardId}`);
-    if (!current.rowHidden && !body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+    if (!current.rowHidden && !current.bodyEl.classList.contains('collapsed')) dirtyCharts.add(current.chart);
   });
 
   replayIndex = finalIndex;
