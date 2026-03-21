@@ -6,7 +6,6 @@
 #include <ESP32Servo.h>
 #include <Arduino.h>
 #include <math.h>
-#include <string.h>
 #include "model.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -57,7 +56,7 @@ WiFiUDP Udp;
 
 // Příznak pro komunikaci
 bool outCommunication = true;  // false = bez WiFi a bez odesílání
-constexpr int kPayloadChannels = 7;
+float dataPayload[7];
 // _________________ wifi, UDP ______________________________________________
 
 // __________ potenciometer, motor, button, servo __________________________
@@ -96,24 +95,14 @@ Adafruit_MPU6050 mpu2;
 bool mpu1_ok = false;
 bool mpu2_ok = false;
 
-// frekvence posilani dat (1Hz = jednou za sekundu)
-const float imuSendFreqHz = 1.0f;
-const unsigned long imuSendPeriod = (unsigned long)(1000000.0f / imuSendFreqHz);
+// frekvence IMU
+const float imuFreq = 10.0;
+const unsigned long imuPeriod = 1000000 / imuFreq;  // 20 ms v mikrosekundách
 
 unsigned long lastIMUTime = 0;
 unsigned long lastLogicTime = 0;
-// frekvence logiky pro tvorbu sekundoveho batch
-const int logicBatchFreqHz = 20;  // nastavitelne
-const unsigned long logicPeriod = 1000000UL / logicBatchFreqHz;
+const unsigned long logicPeriod = 100000;  // 100 ms v mikrosekundách
 // __________ MPU6050 sensors _______________________________________________
-
-constexpr int kBatchSeconds = 1;
-constexpr int kLogicBatchSize = logicBatchFreqHz * kBatchSeconds;
-float dataPayloadBatch[kLogicBatchSize][kPayloadChannels] = {0.0f};
-float dataPayloadBatchToSend[kLogicBatchSize][kPayloadChannels] = {0.0f};
-int batchWriteIndex = 0;
-volatile bool batchReady = false;
-portMUX_TYPE batchMux = portMUX_INITIALIZER_UNLOCKED;
 
 // FreeRTOS task handles
 TaskHandle_t task1Handle = NULL;
@@ -286,23 +275,20 @@ void task1IMU(void *pvParameters) {
   while (1) {
     unsigned long now = micros();
 
-    if (now - lastIMUTime >= imuSendPeriod) {
+    if (now - lastIMUTime >= imuPeriod) {
       lastIMUTime = now;
-      bool canSend = false;
-      portENTER_CRITICAL(&batchMux);
-      if (batchReady) {
-        memcpy(dataPayloadBatchToSend, dataPayloadBatch, sizeof(dataPayloadBatch));
-        batchReady = false;
-        canSend = true;
-      }
-      portEXIT_CRITICAL(&batchMux);
-
-      // Odeslat binární sekundový batch (pouze pokud je komunikace povolena)
-      if (outCommunication && canSend) {
+      // Odeslat binární data (pouze pokud je komunikace povolena)
+      if (outCommunication) {
         Udp.beginPacket(serverIP, serverPort);
-        Udp.write((uint8_t*)dataPayloadBatchToSend, sizeof(dataPayloadBatchToSend));
+        Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
         Udp.endPacket();
-      }
+
+        // // Debug: vypíšeme data do seriálu
+        // Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
+        //             dataPayload[0], dataPayload[1], dataPayload[2],
+        //             dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
+}
+      
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
@@ -408,22 +394,14 @@ void task2Logic(void *pvParameters) {
       }
 
       if (outCommunication) {
-        // 7 hodnot ukladej do sekundoveho batch bufferu
-        portENTER_CRITICAL(&batchMux);
-        dataPayloadBatch[batchWriteIndex][0] = angleValue;
-        dataPayloadBatch[batchWriteIndex][1] = (roll1 / 360.f + 0.5f) * 2.0f;
-        dataPayloadBatch[batchWriteIndex][2] = (gx1 + 100.0f) / 200.0f;
-        dataPayloadBatch[batchWriteIndex][3] = (roll2 / 360.f + 0.5f) * 2.0f;
-        dataPayloadBatch[batchWriteIndex][4] = (gx2 + 100.0f) / 200.0f;
-        dataPayloadBatch[batchWriteIndex][5] = muscleButton;
-        dataPayloadBatch[batchWriteIndex][6] = prediction;
-
-        batchWriteIndex++;
-        if (batchWriteIndex >= kLogicBatchSize) {
-          batchWriteIndex = 0;
-          batchReady = true;
-        }
-        portEXIT_CRITICAL(&batchMux);
+        // 7 hodnot pro binární packet float[7]
+        dataPayload[0] = angleValue;
+        dataPayload[1] = (roll1 + 90.0) / 180.0;
+        dataPayload[2] = (gx1 + 100.0) / 200.0;
+        dataPayload[3] = (roll2 + 90.0) / 180.0;
+        dataPayload[4] = (gx2 + 100.0) / 200.0;
+        dataPayload[5] = muscleButton;
+        dataPayload[6] = prediction;
       }
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
