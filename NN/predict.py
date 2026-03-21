@@ -106,43 +106,76 @@ def stream_predict(model_name: str, txt_file: str, threshold: float = 0.6):
 
 def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
                   threshold: float, plot_path: str):
-    """Plot Angle, Pitch1, Pitch2, label and prediction in stacked subplots."""
-    # Map raw column names if needed (df_raw may still have original headers)
+    """
+    4-panel stacked plot sharing the x-axis:
+      1. Angle
+      2. Pitch 1
+      3. Pitch 2
+      4. Overlay: Angle (left axis) + Label filled + Prediction probability
+                  with threshold line (right axis)
+    """
     df = df_raw.rename(columns=RENAME_MAP)
+    t  = np.arange(len(df))
 
-    t = np.arange(len(df))
+    fig = plt.figure(figsize=(15, 11))
+    gs  = fig.add_gridspec(4, 1, hspace=0.08)
 
-    fig, axes = plt.subplots(5, 1, figsize=(14, 10), sharex=True)
+    ax0 = fig.add_subplot(gs[0])
+    ax1 = fig.add_subplot(gs[1], sharex=ax0)
+    ax2 = fig.add_subplot(gs[2], sharex=ax0)
+    ax3 = fig.add_subplot(gs[3], sharex=ax0)   # overlay panel
 
-    def _plot(ax, values, title, color, fill=False):
+    # ── helper ────────────────────────────────────────────────────────────
+    def _simple(ax, values, ylabel, color):
         ax.plot(t, values, color=color, lw=1)
-        if fill:
-            ax.fill_between(t, values, alpha=0.25, color=color)
-        ax.set_ylabel(title, fontsize=9)
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.tick_params(labelbottom=False)
+        ax.grid(True, alpha=0.25, linestyle=":")
 
-    _plot(axes[0], df["angle"].values,   "Angle",      "steelblue")
-    _plot(axes[1], df["Pitch1"].values,  "Pitch 1",    "darkorange")
-    _plot(axes[2], df["Pitch2"].values,  "Pitch 2",    "green")
-    _plot(axes[3], df["label"].values,   "Label (ON/OFF)", "crimson",  fill=True)
+    _simple(ax0, df["angle"].values,  "Angle",   "#2196F3")
+    _simple(ax1, df["Pitch1"].values, "Pitch 1", "#FF9800")
+    _simple(ax2, df["Pitch2"].values, "Pitch 2", "#4CAF50")
 
-    # Prediction: raw probability + threshold line
-    axes[4].plot(t, predictions, color="purple", lw=1, label="P(ON)")
-    axes[4].axhline(threshold, color="gray", linestyle="--", lw=0.8,
-                    label=f"threshold {threshold}")
-    axes[4].fill_between(t, predictions, threshold,
-                         where=(predictions >= threshold),
-                         alpha=0.25, color="purple", label="predicted ON")
-    axes[4].set_ylim(-0.05, 1.05)
-    axes[4].set_ylabel("Prediction", fontsize=9)
-    axes[4].set_xlabel("Sample index")
-    axes[4].legend(fontsize=8, loc="upper right")
-    axes[4].grid(True, alpha=0.3)
+    # ── overlay panel ─────────────────────────────────────────────────────
+    label_vals = df["label"].values.astype(float)
+    angle_vals = df["angle"].values
 
-    fig.suptitle(os.path.basename(plot_path).replace("_predicted.png", ""),
-                 fontsize=11)
-    fig.tight_layout()
-    fig.savefig(plot_path, dpi=120)
+    # background: soft green fill where label == ON
+    ax3.fill_between(t, 0, 1,
+                     where=(label_vals > 0.5),
+                     transform=ax3.get_xaxis_transform(),
+                     alpha=0.20, color="#4CAF50", label="Label ON (ground truth)")
+
+    # angle on left axis
+    ax3.plot(t, angle_vals, color="#2196F3", lw=1.2, alpha=0.9, label="Angle")
+    ax3.set_ylabel("Angle", fontsize=9, color="#2196F3")
+    ax3.tick_params(axis="y", colors="#2196F3")
+
+    # prediction probability on right axis
+    ax3_r = ax3.twinx()
+    ax3_r.plot(t, predictions, color="#9C27B0", lw=1.5, alpha=0.9, label="P(ON) predicted")
+    ax3_r.fill_between(t, 0, predictions, alpha=0.15, color="#9C27B0")
+    ax3_r.set_ylim(-0.05, 1.05)
+    ax3_r.set_ylabel("P(ON)", fontsize=9, color="#9C27B0")
+    ax3_r.tick_params(axis="y", colors="#9C27B0")
+
+    ax3.set_xlabel("Sample index", fontsize=9)
+    ax3.grid(True, alpha=0.25, linestyle=":")
+
+    # combined legend from both axes
+    lines_l, labels_l = ax3.get_legend_handles_labels()
+    lines_r, labels_r = ax3_r.get_legend_handles_labels()
+    ax3.legend(lines_l + lines_r, labels_l + labels_r,
+               fontsize=8, loc="upper right", framealpha=0.85)
+
+    # hide x tick labels on top 3 panels
+    plt.setp(ax0.get_xticklabels(), visible=False)
+    plt.setp(ax1.get_xticklabels(), visible=False)
+    plt.setp(ax2.get_xticklabels(), visible=False)
+
+    title = os.path.basename(plot_path).replace("_predicted.png", "")
+    fig.suptitle(title, fontsize=11, fontweight="bold", y=0.995)
+    fig.savefig(plot_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
 
