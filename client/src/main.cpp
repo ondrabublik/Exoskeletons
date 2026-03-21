@@ -30,6 +30,12 @@ TfLiteTensor* output = nullptr;
 
 // Příznak pro predikci
 bool predictionEnabled = false;  // false = bez neuronové sítě
+
+// Buffer pro časovou historii vstupů do NN
+constexpr int kNnChannels = 5;       // angle, roll1, gx1, roll2, gx2
+constexpr int kNnBufferLength = 20;  // volitelná délka bufferu
+float nnInputBuffer[kNnChannels][kNnBufferLength] = {0.0f};
+int nnSamplesCollected = 0;
 // _________________ neural network__________________________________________
 
 
@@ -332,22 +338,45 @@ void task2Logic(void *pvParameters) {
       float roll1 = atan2(ay1, ax1) * 57.2958f;
       float roll2 = atan2(ay2, ax2) * 57.2958f;
 
+      // normalizované vstupy (kanály)
+      float nnChannels[kNnChannels];
+      nnChannels[0] = angleValue;
+      nnChannels[1] = (roll1 + 90.0f) / 180.0f;
+      nnChannels[2] = (gx1 + 100.0f) / 200.0f;
+      nnChannels[3] = (roll2 + 90.0f) / 180.0f;
+      nnChannels[4] = (gx2 + 100.0f) / 200.0f;
+
+      // posun bufferu doleva a vložení nového vzorku na konec
+      for (int ch = 0; ch < kNnChannels; ch++) {
+        for (int i = 0; i < kNnBufferLength - 1; i++) {
+          nnInputBuffer[ch][i] = nnInputBuffer[ch][i + 1];
+        }
+        nnInputBuffer[ch][kNnBufferLength - 1] = nnChannels[ch];
+      }
+      if (nnSamplesCollected < kNnBufferLength) {
+        nnSamplesCollected++;
+      }
+
       // Spuštění inference (pouze pokud je povolena predikce)
       float prediction = 0.0;
       if (predictionEnabled) {
-        // Vložení signálů do vstupního tensoru (první dva vstupy)
-        if (input->bytes >= 5 * sizeof(float)) {
-          input->data.f[0] = angleValue; // TODO - zvolit správné signály pro model
-          input->data.f[1] = (roll1 + 90.0) / 180.0;  // normalizace na 0.0 - 1.0
-          input->data.f[2] = (gx1 + 100.0) / 200.0;  // normalizace na 0.0 - 1.0 (předpoklad, že gyroskop má rozsah ±100 deg/s)
-          input->data.f[3] = (roll2 + 90.0) / 180.0;  // normalizace na 0.0 - 1.0
-          input->data.f[4] = (gx2 + 100.0) / 200.0;
+        bool readyForInference = false;
+        // Do vstupu NN vlož všechny hodnoty bufferu pro každý kanál
+        const int nnInputCount = kNnChannels * kNnBufferLength;
+        if (input && input->bytes >= nnInputCount * (int)sizeof(float) && nnSamplesCollected >= kNnBufferLength) {
+          int idx = 0;
+          for (int ch = 0; ch < kNnChannels; ch++) {
+            for (int i = 0; i < kNnBufferLength; i++) {
+              input->data.f[idx++] = nnInputBuffer[ch][i];
+            }
+          }
+          readyForInference = true;
         }
 
         // Spuštění inference
-        if (interpreter->Invoke() != kTfLiteOk) {
+        if (readyForInference && interpreter->Invoke() != kTfLiteOk) {
           Serial.println("Chyba při Invoke()");
-        } else {
+        } else if (readyForInference) {
           // Čtení výstupu
           prediction = output->data.f[0];
 
@@ -374,7 +403,7 @@ void task2Logic(void *pvParameters) {
         dataPayload[6] = prediction;
       }
 
-      //ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(1));
+      ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(1));
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
