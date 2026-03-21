@@ -33,7 +33,7 @@ bool predictionEnabled = true;  // false = bez neuronové sítě
 
 // Buffer pro časovou historii vstupů do NN
 constexpr int kNnChannels = 5;       // angle, roll1, gx1, roll2, gx2
-constexpr int kNnBufferLength = 20;  // volitelná délka bufferu
+constexpr int kNnBufferLength = 10;  // volitelná délka bufferu
 float nnInputBuffer[kNnChannels][kNnBufferLength] = {0.0f};
 int nnSamplesCollected = 0;
 // _________________ neural network__________________________________________
@@ -41,15 +41,15 @@ int nnSamplesCollected = 0;
 
 // _________________ wifi, UDP ______________________________________________
 // nastavenní WiFi a UDP
-//const char* ssid = "HONOR 200";
-//const char* password = "wifihonor";
-const char* ssid = "AimtecHackathon2026";
-const char* password = "Kdyzkodpomaha";
+const char* ssid = "HONOR 200";
+const char* password = "wifihonor";
+//const char* ssid = "AimtecHackathon2026";
+//const char* password = "Kdyzkodpomaha";
 
-const char* serverIP = "192.168.30.86";
+//const char* serverIP = "192.168.30.86";
 const int localPort = 8889;
 
-//const char* serverIP = "10.255.57.209";
+const char* serverIP = "10.255.57.209";
 const int serverPort = 9999;
 
 WiFiUDP Udp;
@@ -63,16 +63,16 @@ float dataPayload[7];
 // pin potenciometru
 const int POT_PIN = 35;
 float angleValue = 0;
-const float angleMin = 0.0f;
-const float angleMax = 1.0f;
+const float angleMin = 0.13f;
+const float angleMax = 0.8f;
 
 // muscle button pin
 const int MUSCLE_BUTTON_PIN = 19;
 
 // servo pin (PWM)
 const int SERVO_PIN = 12;
-const int lock = 180;
-const int unlock = 0;
+const int lock = 0;
+const int unlock = 90;
 Servo doorServo;
 
 // motor pin (PWM)
@@ -96,8 +96,7 @@ bool mpu1_ok = false;
 bool mpu2_ok = false;
 
 // frekvence IMU
-const float imuFreq = 10.0;
-const unsigned long imuPeriod = 1000000 / imuFreq;  // 20 ms v mikrosekundách
+const unsigned long imuPeriod = 100000;  // 100 ms v mikrosekundách
 
 unsigned long lastIMUTime = 0;
 unsigned long lastLogicTime = 0;
@@ -366,8 +365,13 @@ void task2Logic(void *pvParameters) {
         const int nnInputCount = kNnChannels * kNnBufferLength;
         if (input && input->bytes >= nnInputCount * (int)sizeof(float) && nnSamplesCollected >= kNnBufferLength) {
           int idx = 0;
-          for (int ch = 0; ch < kNnChannels; ch++) {
-            for (int i = 0; i < kNnBufferLength; i++) {
+          // for (int ch = 0; ch < kNnChannels; ch++) {
+          //   for (int i = 0; i < kNnBufferLength; i++) {
+          //     input->data.f[idx++] = nnInputBuffer[ch][i];
+          //   }
+          // }
+          for (int i = 0; i < kNnBufferLength; i++) {
+            for (int ch = 0; ch < kNnChannels; ch++) {
               input->data.f[idx++] = nnInputBuffer[ch][i];
             }
           }
@@ -381,7 +385,7 @@ void task2Logic(void *pvParameters) {
           // Čtení výstupu
           prediction = output->data.f[0];
 
-          if (prediction > 0.9f && angleValue >= angleMin && angleValue <= angleMax) {
+          if (prediction > 0.6f && angleValue >= angleMin && angleValue <= angleMax) {
             ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(MOTOR_INTENSITY));
             doorServo.write(lock);
             digitalWrite(LED_PIN, HIGH);
@@ -396,9 +400,9 @@ void task2Logic(void *pvParameters) {
       if (outCommunication) {
         // 7 hodnot pro binární packet float[7]
         dataPayload[0] = angleValue;
-        dataPayload[1] = (roll1 + 90.0) / 180.0;
+        dataPayload[1] =  (roll1 / 360.f + 0.5f) * 2.0f;
         dataPayload[2] = (gx1 + 100.0) / 200.0;
-        dataPayload[3] = (roll2 + 90.0) / 180.0;
+        dataPayload[3] = (roll2 / 360.0f + 0.5f) * 2.0f;
         dataPayload[4] = (gx2 + 100.0) / 200.0;
         dataPayload[5] = muscleButton;
         dataPayload[6] = prediction;
