@@ -8,6 +8,19 @@ const { Server } = require('socket.io');
 const app = express();
 app.use(express.static('public'));
 
+// File download route
+app.get('/api/recordings/:fileName', (req, res) => {
+	const safeFileName = path.basename(req.params.fileName || '');
+	if (!safeFileName.toLowerCase().endsWith('.csv')) {
+		return res.status(400).json({ error: 'Only .csv files are allowed' });
+	}
+	const filePath = path.join(RECORDINGS_DIR, safeFileName);
+	if (!fs.existsSync(filePath)) {
+		return res.status(404).json({ error: 'Recording not found' });
+	}
+	res.download(filePath, safeFileName);
+});
+
 const RECORDINGS_DIR = path.join(__dirname, 'recordings');
 fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
 
@@ -250,6 +263,48 @@ io.on('connection', (socket) => {
 			const recording = loadRecording(payload.fileName);
 			if (typeof callback === 'function') {
 				callback({ ok: true, recording });
+			}
+		} catch (error) {
+			if (typeof callback === 'function') {
+				callback({ ok: false, error: error.message });
+			}
+		}
+	});
+
+	socket.on('recording:delete', (payload = {}, callback) => {
+		try {
+			const safeFileName = path.basename(payload.fileName || '');
+			if (!safeFileName.toLowerCase().endsWith('.csv')) {
+				throw new Error('Invalid file name');
+			}
+			if (activeRecording && activeRecording.fileName === safeFileName) {
+				throw new Error('Cannot delete an active recording');
+			}
+			const filePath = path.join(RECORDINGS_DIR, safeFileName);
+			if (!fs.existsSync(filePath)) {
+				throw new Error('Recording not found');
+			}
+			fs.unlinkSync(filePath);
+			io.emit('recordings:list', listRecordings());
+			if (typeof callback === 'function') {
+				callback({ ok: true });
+			}
+		} catch (error) {
+			if (typeof callback === 'function') {
+				callback({ ok: false, error: error.message });
+			}
+		}
+	});
+
+	socket.on('recording:deleteAll', (_payload = {}, callback) => {
+		try {
+			const activeFileName = activeRecording ? activeRecording.fileName : null;
+			const files = fs.readdirSync(RECORDINGS_DIR)
+				.filter((f) => f.toLowerCase().endsWith('.csv') && f !== activeFileName);
+			files.forEach((f) => fs.unlinkSync(path.join(RECORDINGS_DIR, f)));
+			io.emit('recordings:list', listRecordings());
+			if (typeof callback === 'function') {
+				callback({ ok: true, deleted: files.length });
 			}
 		} catch (error) {
 			if (typeof callback === 'function') {

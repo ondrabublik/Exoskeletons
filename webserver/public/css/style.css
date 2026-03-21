@@ -293,3 +293,69 @@ h1 {
     font-size: 0.8rem;
   }
 }
+
+/* ── File manager ────────────────────────────────────────────── */
+
+.files-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.files-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.files-table th {
+  text-align: left;
+  padding: 9px 12px;
+  color: var(--muted);
+  background: var(--bg-softer);
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.files-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.files-table tr:last-child td {
+  border-bottom: none;
+}
+
+.files-table tr:hover td {
+  background: var(--bg-softer);
+}
+
+.files-table .col-name {
+  font-family: Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.files-table .col-size,
+.files-table .col-date {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.files-table .col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.files-table .col-actions .file-action-row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.files-table .col-actions a.button {
+  text-decoration: none;
+}

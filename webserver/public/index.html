@@ -12,6 +12,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="live">Live Data</button>
     <button class="tab-btn" data-tab="recordings">Recordings</button>
+    <button class="tab-btn" data-tab="files">Files</button>
   </div>
 
   <section class="panel active" id="panel-live">
@@ -78,6 +79,30 @@
           </div>
     </div>
     <div class="grid" id="replay-grid"></div>
+  </section>
+
+  <!-- FILES TAB -->
+  <section class="panel" id="panel-files">
+    <div class="toolbar">
+      <span class="muted" id="files-count">0 files</span>
+      <div class="grow"></div>
+      <button class="button" id="files-refresh">Refresh</button>
+      <button class="button" id="files-download-all">Download All</button>
+      <button class="button danger" id="files-clear-all">Clear All</button>
+    </div>
+    <div class="files-table-wrap">
+      <table class="files-table">
+        <thead>
+          <tr>
+            <th>File Name</th>
+            <th>Size</th>
+            <th>Modified</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="files-tbody"></tbody>
+      </table>
+    </div>
   </section>
 
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>

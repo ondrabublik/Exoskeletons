@@ -42,10 +42,31 @@ const socket = io('http://192.168.30.86:3000');
 
 // Helper functions
 function getTimeLabel(sampleIndex, frequencyHz) {
-  const seconds = sampleIndex / frequencyHz;
-  const mm = Math.floor(seconds / 60);
-  const ss = (seconds % 60).toFixed(1);
-  return `${mm}:${String(ss).padStart(4, '0')}`;
+  const seconds = (sampleIndex - (MAX_POINTS - 1)) / frequencyHz;
+  return `${seconds.toFixed(1)} s`;
+}
+
+// ── Render loop ─────────────────────────────────────────────────────────────
+// All chart renders are batched through requestAnimationFrame.
+// pushSample() only mutates pre-allocated buffers and marks charts dirty;
+// no {x,y} objects are ever allocated after startup.
+let activeTab = 'live';
+const dirtyCharts = new Set();
+let rafPending = false;
+
+function scheduleRender() {
+  if (!rafPending) {
+    rafPending = true;
+    requestAnimationFrame(flushRender);
+  }
+}
+
+function flushRender() {
+  rafPending = false;
+  for (const chart of dirtyCharts) {
+    chart.update('none');
+  }
+  dirtyCharts.clear();
 }
 
 function buildDashboard(gridId, keyPrefix) {
@@ -70,13 +91,16 @@ function buildDashboard(gridId, keyPrefix) {
       </div>`;
     grid.appendChild(card);
 
+    // Pre-allocate a fixed buffer of {x,y} objects — never reallocated
+    const buf = Array.from({ length: MAX_POINTS }, (_, i) => ({ x: i, y: null }));
+
     const ctx = document.getElementById(`canvas-${cardId}`).getContext('2d');
     const chart = new Chart(ctx, {
       type: 'line',
       data: {
         datasets: [
           {
-            data: [],
+            data: buf,
             borderColor: color,
             borderWidth: 1.5,
             pointRadius: 0,
@@ -109,8 +133,8 @@ function buildDashboard(gridId, keyPrefix) {
             grid: { color: '#202b36' }
           },
           y: {
-            min: -0.05,
-            max: 1.05,
+            min: 0,
+            max: 1,
             ticks: {
               color: '#8e9eb0',
               maxTicksLimit: 6,
@@ -147,7 +171,7 @@ function buildDashboard(gridId, keyPrefix) {
       colBtn.click();
     });
 
-    return { cardId, chart };
+    return { cardId, chart, buf };
   });
 }
 
@@ -155,56 +179,77 @@ function updateChartMaxPoints() {
   const allCards = [...liveCards, ...replayCards];
   allCards.forEach((current) => {
     current.chart.options.scales.x.max = MAX_POINTS - 1;
-    const dataset = current.chart.data.datasets[0];
-    if (dataset.data.length > MAX_POINTS) {
-      dataset.data = dataset.data.slice(dataset.data.length - MAX_POINTS);
-    }
-
-    // Keep a stable 0..N-1 x-domain so axis never rescales during playback.
-    dataset.data = dataset.data.map((point, index) => ({ x: index, y: point.y }));
-    current.chart.update('none');
+    const oldBuf = current.buf;
+    const newBuf = Array.from({ length: MAX_POINTS }, (_, i) => ({ x: i, y: null }));
+    const copyCount = Math.min(oldBuf.length, MAX_POINTS);
+    const copyFrom = oldBuf.length - copyCount;
+    const pad = MAX_POINTS - copyCount;
+    for (let j = 0; j < copyCount; j++) newBuf[pad + j].y = oldBuf[copyFrom + j].y;
+    current.buf = newBuf;
+    current.chart.data.datasets[0].data = newBuf;
+    dirtyCharts.add(current.chart);
   });
+  scheduleRender();
 }
 
 function resetDashboard(cards) {
   cards.forEach((current) => {
-    current.chart.data.datasets[0].data = [];
-    current.chart.update('none');
+    const buf = current.buf;
+    for (let j = 0; j < buf.length; j++) buf[j].y = null;
+    dirtyCharts.add(current.chart);
     document.getElementById(`val-${current.cardId}`).textContent = '--';
   });
+  scheduleRender();
 }
 
 function pushSample(cards, values) {
+  // Determine visibility: skip dirty-marking for charts on hidden tabs
+  const tabPrefix = cards.length > 0 ? cards[0].cardId.split('-')[0] : null;
+  const tabVisible = tabPrefix === 'live' ? activeTab === 'live' : activeTab === 'recordings';
+
   values.forEach((value, i) => {
     const current = cards[i];
-    if (!current) {
-      return;
-    }
+    if (!current) return;
 
-    const dataset = current.chart.data.datasets[0];
-    dataset.data.push({ x: dataset.data.length, y: value });
-    if (dataset.data.length > MAX_POINTS) {
-      dataset.data.shift();
-      dataset.data = dataset.data.map((point, index) => ({ x: index, y: point.y }));
-    }
+    // In-place circular shift — zero allocations
+    const buf = current.buf;
+    const n = buf.length;
+    for (let j = 0; j < n - 1; j++) buf[j].y = buf[j + 1].y;
+    buf[n - 1].y = value;
 
-    const body = document.getElementById(`body-${current.cardId}`);
-    if (!body.classList.contains('collapsed')) {
-      current.chart.update('none');
+    if (tabVisible) {
+      const body = document.getElementById(`body-${current.cardId}`);
+      if (!body.classList.contains('collapsed')) {
+        dirtyCharts.add(current.chart);
+      }
     }
 
     document.getElementById(`val-${current.cardId}`).textContent = Number(value).toFixed(4);
   });
+
+  if (tabVisible) scheduleRender();
 }
 
 // Socket events
 function setTab(tabName) {
+  activeTab = tabName;
   document.querySelectorAll('.tab-btn').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tabName);
   });
 
   document.getElementById('panel-live').classList.toggle('active', tabName === 'live');
   document.getElementById('panel-recordings').classList.toggle('active', tabName === 'recordings');
+  document.getElementById('panel-files').classList.toggle('active', tabName === 'files');
+
+  // Immediately refresh charts on the newly visible tab
+  const cardsToRender = tabName === 'live' ? liveCards
+    : tabName === 'recordings' ? replayCards
+    : [];
+  cardsToRender.forEach((current) => {
+    const body = document.getElementById(`body-${current.cardId}`);
+    if (!body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+  });
+  scheduleRender();
 }
 
 function updateRecordingButton() {
@@ -240,6 +285,8 @@ function renderRecordingsList(recordings) {
   if (currentValue && Array.from(dropdown.options).some((o) => o.value === currentValue)) {
     dropdown.value = currentValue;
   }
+
+  renderFilesTable(recordings);
 }
 
 function stopReplayLoop() {
@@ -250,22 +297,34 @@ function stopReplayLoop() {
 }
 
 function replayToIndex(targetIndex) {
-  if (!replayRecording) {
-    return;
-  }
+  if (!replayRecording) return;
 
-  resetDashboard(replayCards);
-  replayIndex = 0;
-  replayX = 0;
-
+  // O(MAX_POINTS) direct buffer fill instead of O(n × MAX_POINTS) pushSample loop
   const finalIndex = Math.max(0, Math.min(targetIndex, replayRecording.samples.length));
-  for (let i = 0; i < finalIndex; i++) {
-    pushSample(replayCards, replayRecording.samples[i].values, replayX);
-    replayX += 1;
-  }
+  const sliceStart = Math.max(0, finalIndex - MAX_POINTS);
+  const slice = replayRecording.samples.slice(sliceStart, finalIndex);
+  const pad = MAX_POINTS - slice.length;
+
+  replayCards.forEach((current, i) => {
+    const buf = current.buf;
+    for (let j = 0; j < pad; j++) buf[j].y = null;
+    for (let j = 0; j < slice.length; j++) buf[pad + j].y = slice[j].values[i];
+
+    const lastVal = slice.length > 0 ? slice[slice.length - 1].values[i] : null;
+    document.getElementById(`val-${current.cardId}`).textContent =
+      lastVal !== null ? Number(lastVal).toFixed(4) : '--';
+
+    const body = document.getElementById(`body-${current.cardId}`);
+    if (!body.classList.contains('collapsed')) dirtyCharts.add(current.chart);
+  });
+
   replayIndex = finalIndex;
+  replayX = finalIndex;
+  scheduleRender();
+
   document.getElementById('replay-scrub').value = String(replayIndex);
-  document.getElementById('replay-info').textContent = `${replayIndex}/${replayRecording.samples.length} samples`;
+  document.getElementById('replay-info').textContent =
+    `${replayIndex}/${replayRecording.samples.length} samples`;
 }
 
 function replayFrame(nowMs) {
@@ -349,6 +408,75 @@ function loadRecording(fileName) {
 document.querySelectorAll('.tab-btn').forEach((button) => {
   button.addEventListener('click', () => setTab(button.dataset.tab));
 });
+
+// ── File manager ───────────────────────────────────────────────────────────────
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function renderFilesTable(recordings) {
+  const tbody = document.getElementById('files-tbody');
+  const count = document.getElementById('files-count');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  count.textContent = `${recordings.length} file${recordings.length !== 1 ? 's' : ''}`;
+
+  recordings.forEach((item) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="col-name">${item.fileName}</td>
+      <td class="col-size">${formatBytes(item.sizeBytes)}</td>
+      <td class="col-date">${new Date(item.modifiedAt).toLocaleString()}</td>
+      <td class="col-actions">
+        <div class="file-action-row">
+          <a class="button" href="/api/recordings/${encodeURIComponent(item.fileName)}" download="${item.fileName}">Download</a>
+          <button class="button danger" data-delete="${item.fileName}">Delete</button>
+        </div>
+      </td>`;
+
+    tr.querySelector('[data-delete]').addEventListener('click', () => {
+      if (!confirm(`Delete "${item.fileName}"?`)) return;
+      socket.emit('recording:delete', { fileName: item.fileName }, (response) => {
+        if (!response || !response.ok) {
+          alert(response?.error || 'Failed to delete recording');
+        }
+      });
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('files-refresh').addEventListener('click', requestRecordingsList);
+
+document.getElementById('files-download-all').addEventListener('click', () => {
+  socket.emit('recordings:list', {}, (response) => {
+    if (!response || !response.ok || response.recordings.length === 0) return;
+    response.recordings.forEach((item, index) => {
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = `/api/recordings/${encodeURIComponent(item.fileName)}`;
+        a.download = item.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, index * 300);
+    });
+  });
+});
+
+document.getElementById('files-clear-all').addEventListener('click', () => {
+  if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
+  socket.emit('recording:deleteAll', {}, (response) => {
+    if (!response || !response.ok) {
+      alert(response?.error || 'Failed to clear recordings');
+    }
+  });
+});
+
 
 document.getElementById('max-points-input').addEventListener('change', (e) => {
   const val = parseInt(e.target.value, 10);
