@@ -6,6 +6,7 @@
 #include <ESP32Servo.h>
 #include <Arduino.h>
 #include <math.h>
+#include <string.h>
 #include "model.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -29,7 +30,7 @@ TfLiteTensor* input = nullptr;
 TfLiteTensor* output = nullptr;
 
 // Příznak pro predikci
-bool predictionEnabled = false;  // false = bez neuronové sítě
+bool predictionEnabled = true;  // false = bez neuronové sítě
 
 // Buffer pro časovou historii vstupů do NN
 constexpr int kNnChannels = 5;       // angle, roll1, gx1, roll2, gx2
@@ -41,23 +42,22 @@ int nnSamplesCollected = 0;
 
 // _________________ wifi, UDP ______________________________________________
 // nastavenní WiFi a UDP
-// const char* ssid = "hpwifi";
-// const char* password = "password";
+//const char* ssid = "HONOR 200";
+//const char* password = "wifihonor";
 const char* ssid = "AimtecHackathon2026";
 const char* password = "Kdyzkodpomaha";
 
-// const char* serverIP = "192.168.0.141";
-// const int serverPort = 8888;
+const char* serverIP = "192.168.30.86";
 const int localPort = 8889;
 
-const char* serverIP = "192.168.31.100";
+//const char* serverIP = "10.255.57.209";
 const int serverPort = 9999;
 
 WiFiUDP Udp;
 
 // Příznak pro komunikaci
 bool outCommunication = true;  // false = bez WiFi a bez odesílání
-float dataPayload[7];
+constexpr int kPayloadChannels = 7;
 // _________________ wifi, UDP ______________________________________________
 
 // __________ potenciometer, motor, button, servo __________________________
@@ -77,7 +77,7 @@ const int unlock = 0;
 Servo doorServo;
 
 // motor pin (PWM)
-const int MOTOR_PIN = 8;
+const int MOTOR_PIN = 25;
 const int MOTOR_PWM_FREQ = 2000;
 const int MOTOR_PWM_RESOLUTION = 10;
 const int MOTOR_PWM_CHANNEL = 1;
@@ -85,7 +85,7 @@ const int MOTOR_PWM_CHANNEL = 1;
 const float MOTOR_INTENSITY = 1.0f;
 
 // LED na D3 (GPIO0)
-const int LED_PIN = 3;
+const int LED_PIN = 4;
 int ledState = LOW;  // 0 nebo 1 příchozí binární packet
 // __________ potenciometer, motor, button, servo __________________________
 
@@ -96,14 +96,24 @@ Adafruit_MPU6050 mpu2;
 bool mpu1_ok = false;
 bool mpu2_ok = false;
 
-// frekvence IMU
-const float imuFreq = 10.0;
-const unsigned long imuPeriod = 1000000 / imuFreq;  // 20 ms v mikrosekundách
+// frekvence posilani dat (1Hz = jednou za sekundu)
+const float imuSendFreqHz = 1.0f;
+const unsigned long imuSendPeriod = (unsigned long)(1000000.0f / imuSendFreqHz);
 
 unsigned long lastIMUTime = 0;
 unsigned long lastLogicTime = 0;
-const unsigned long logicPeriod = 100000;  // 100 ms v mikrosekundách
+// frekvence logiky pro tvorbu sekundoveho batch
+const int logicBatchFreqHz = 20;  // nastavitelne
+const unsigned long logicPeriod = 1000000UL / logicBatchFreqHz;
 // __________ MPU6050 sensors _______________________________________________
+
+constexpr int kBatchSeconds = 1;
+constexpr int kLogicBatchSize = logicBatchFreqHz * kBatchSeconds;
+float dataPayloadBatch[kLogicBatchSize][kPayloadChannels] = {0.0f};
+float dataPayloadBatchToSend[kLogicBatchSize][kPayloadChannels] = {0.0f};
+int batchWriteIndex = 0;
+volatile bool batchReady = false;
+portMUX_TYPE batchMux = portMUX_INITIALIZER_UNLOCKED;
 
 // FreeRTOS task handles
 TaskHandle_t task1Handle = NULL;
@@ -210,11 +220,13 @@ void setup() {
     }
 
     // Registr všech operací (jednoduché řešení)
-    static tflite::MicroMutableOpResolver<10> resolver;
+    static tflite::MicroMutableOpResolver<20> resolver;
     
     // Registrace operací potřebných pro model
     resolver.AddConv2D();        // pro Conv1D !!!
     resolver.AddReshape();       // Flatten
+    resolver.AddExpandDims();    // často u Conv1D / vstupního tvaru v Keras exportu
+    resolver.AddMean();          // GlobalAveragePooling / reduce_mean v grafu
     resolver.AddFullyConnected();
     resolver.AddRelu();
     resolver.AddLogistic();
@@ -268,26 +280,29 @@ void setup() {
 }
 
 void task1IMU(void *pvParameters) {
-  // Task 1: Čtení IMU senzorů
+  // Task 1: Odeslani sekundoveho batch
   unsigned long lastIMUTime = 0;
   
   while (1) {
     unsigned long now = micros();
 
-    if (now - lastIMUTime >= imuPeriod) {
+    if (now - lastIMUTime >= imuSendPeriod) {
       lastIMUTime = now;
-      // Odeslat binární data (pouze pokud je komunikace povolena)
-      if (outCommunication) {
-        Udp.beginPacket(serverIP, serverPort);
-        Udp.write((uint8_t*)dataPayload, sizeof(dataPayload));
-        Udp.endPacket();
+      bool canSend = false;
+      portENTER_CRITICAL(&batchMux);
+      if (batchReady) {
+        memcpy(dataPayloadBatchToSend, dataPayloadBatch, sizeof(dataPayloadBatch));
+        batchReady = false;
+        canSend = true;
+      }
+      portEXIT_CRITICAL(&batchMux);
 
-        // // Debug: vypíšeme data do seriálu
-        // Serial.printf("Binární packet float[7]: %.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-        //             dataPayload[0], dataPayload[1], dataPayload[2],
-        //             dataPayload[3], dataPayload[4], dataPayload[5], dataPayload[6]);
-}
-      
+      // Odeslat binární sekundový batch (pouze pokud je komunikace povolena)
+      if (outCommunication && canSend) {
+        Udp.beginPacket(serverIP, serverPort);
+        Udp.write((uint8_t*)dataPayloadBatchToSend, sizeof(dataPayloadBatchToSend));
+        Udp.endPacket();
+      }
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
@@ -341,9 +356,9 @@ void task2Logic(void *pvParameters) {
       // normalizované vstupy (kanály)
       float nnChannels[kNnChannels];
       nnChannels[0] = angleValue;
-      nnChannels[1] = (roll1 + 90.0f) / 180.0f;
+      nnChannels[1] = (roll1 / 360.f + 0.5f) * 2.0f;
       nnChannels[2] = (gx1 + 100.0f) / 200.0f;
-      nnChannels[3] = (roll2 + 90.0f) / 180.0f;
+      nnChannels[3] = (roll2 / 360.0f + 0.5f) * 2.0f;
       nnChannels[4] = (gx2 + 100.0f) / 200.0f;
 
       // posun bufferu doleva a vložení nového vzorku na konec
@@ -393,17 +408,23 @@ void task2Logic(void *pvParameters) {
       }
 
       if (outCommunication) {
-        // 7 hodnot pro binární packet float[7]
-        dataPayload[0] = angleValue;
-        dataPayload[1] = (roll1 + 90.0) / 180.0;
-        dataPayload[2] = (gx1 + 100.0) / 200.0;
-        dataPayload[3] = (roll2 + 90.0) / 180.0;
-        dataPayload[4] = (gx2 + 100.0) / 200.0;
-        dataPayload[5] = muscleButton;
-        dataPayload[6] = prediction;
-      }
+        // 7 hodnot ukladej do sekundoveho batch bufferu
+        portENTER_CRITICAL(&batchMux);
+        dataPayloadBatch[batchWriteIndex][0] = angleValue;
+        dataPayloadBatch[batchWriteIndex][1] = (roll1 / 360.f + 0.5f) * 2.0f;
+        dataPayloadBatch[batchWriteIndex][2] = (gx1 + 100.0f) / 200.0f;
+        dataPayloadBatch[batchWriteIndex][3] = (roll2 / 360.f + 0.5f) * 2.0f;
+        dataPayloadBatch[batchWriteIndex][4] = (gx2 + 100.0f) / 200.0f;
+        dataPayloadBatch[batchWriteIndex][5] = muscleButton;
+        dataPayloadBatch[batchWriteIndex][6] = prediction;
 
-      ledcWrite(MOTOR_PWM_CHANNEL, motorIntensityToDuty(1));
+        batchWriteIndex++;
+        if (batchWriteIndex >= kLogicBatchSize) {
+          batchWriteIndex = 0;
+          batchReady = true;
+        }
+        portEXIT_CRITICAL(&batchMux);
+      }
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
   }
