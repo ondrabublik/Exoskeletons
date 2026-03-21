@@ -39,7 +39,7 @@ RENAME_MAP  = {
 
 COLUMNS    = ["angle", "Pitch1", "PitchRate1", "Pitch2", "PitchRate2", "label"]
 FEATURES   = ["angle", "Pitch1", "PitchRate1", "Pitch2", "PitchRate2"]
-WINDOW     = 20      # number of time-steps fed to the network at once
+WINDOW     = 10      # number of time-steps fed to the network at once
 STEP       = 1       # sliding-window stride – use 1 for maximum samples (full overlap)
                      # increase (e.g. 5) only if you have a very large dataset and want faster training
 # ────────────────────────────────────────────────────────────────────────────

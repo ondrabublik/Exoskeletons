@@ -246,7 +246,7 @@ def main(which: str = "both"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["dense", "cnn", "both"],
-                        default="both",
+                        default="cnn",
                         help="Which architecture to train.")
     args = parser.parse_args()
     main(args.model)

@@ -57,10 +57,10 @@ def build_dense_model(window: int = WINDOW,
 # ── B: 1-D CNN ───────────────────────────────────────────────────────────────
 def build_cnn_model(window: int = WINDOW,
                     n_features: int = N_FEATURES,
-                    filters: tuple = (16, 32),
+                    filters: tuple = (8, 16), #(16, 32),
                     kernel_sizes: tuple = (5, 3),
-                    dense_units: int = 32,
-                    dropout: float = 0.3) -> keras.Model:
+                    dense_units: int = 12, #32,
+                    dropout: float = 0.5)  -> keras.Model:  #0.3)
     """
     Two Conv1D layers extract local temporal patterns across the window,
     GlobalAveragePooling collapses the time axis → one Dense head.
