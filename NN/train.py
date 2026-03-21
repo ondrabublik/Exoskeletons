@@ -25,7 +25,7 @@ from models import build_dense_model, build_cnn_model, compile_model
 from converter import convert_model
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
-EPOCHS        = 200
+EPOCHS        = 2000
 BATCH_SIZE    = 32
 LEARNING_RATE = 1e-3
 BASE_DIR = os.path.dirname(__file__)   # NN/

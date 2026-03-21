@@ -85,8 +85,9 @@ def stream_predict(model_name: str, txt_file: str, threshold: float = 0.6):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["dense", "cnn"], default="cnn")
-    parser.add_argument("--file",  default=os.path.join("DATA", "2026-03-21T09-57-02-714Z.csv"))
+    parser.add_argument("--file",  default=os.path.join("DATA", "2026-03-21T14-32-22-885Z_r.csv"))
     parser.add_argument("--threshold", type=float, default=0.6)
     args = parser.parse_args()
     stream_predict(args.model, args.file, args.threshold)
+
 
