@@ -1,210 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Exoskeleton Sensor Dashboard</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0f1318;
-      --bg-soft: #171d24;
-      --bg-softer: #1c242d;
-      --line: #2b3744;
-      --text: #e8edf4;
-      --muted: #9aa8ba;
-      --accent: #3ec1ff;
-      --danger: #ff6161;
-      --ok: #48d386;
-    }
-
-    body {
-      min-height: 100vh;
-      background: radial-gradient(circle at top right, #152131, var(--bg) 55%);
-      color: var(--text);
-      font-family: 'Segoe UI', Tahoma, sans-serif;
-      padding: 18px;
-    }
-
-    h1 {
-      margin-bottom: 14px;
-      font-size: 1.35rem;
-      letter-spacing: 0.04em;
-      color: #b9e9ff;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .tab-btn {
-      border: 1px solid var(--line);
-      background: var(--bg-soft);
-      color: var(--muted);
-      border-radius: 10px;
-      padding: 8px 14px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    .tab-btn.active {
-      background: #132635;
-      border-color: #33516a;
-      color: #d8f0ff;
-    }
-
-    .panel { display: none; }
-    .panel.active { display: block; }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-    }
-
-    .dot { width: 10px; height: 10px; border-radius: 50%; background: #55606d; }
-    .dot.connected { background: var(--ok); box-shadow: 0 0 8px #48d38677; }
-    .dot.disconnected { background: var(--danger); }
-
-    .status,
-    .muted {
-      font-size: 0.86rem;
-      color: var(--muted);
-    }
-
-    .grow { margin-left: auto; }
-
-    .button {
-      border: 1px solid #36506a;
-      background: #18314a;
-      color: #d5eeff;
-      border-radius: 8px;
-      padding: 7px 12px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    .button:hover { filter: brightness(1.08); }
-    .button.danger {
-      border-color: #744;
-      background: #4a1f1f;
-      color: #ffd9d9;
-    }
-
-    .input {
-      border: 1px solid var(--line);
-      background: var(--bg-soft);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 7px 10px;
-      min-width: 220px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-      gap: 10px;
-    }
-
-    .chart-card {
-      background: var(--bg-soft);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .chart-card.expanded { grid-column: 1 / -1; }
-
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--line);
-      background: var(--bg-softer);
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .card-title { flex: 1; font-size: 0.88rem; font-weight: 700; }
-    .card-value {
-      color: #c4cedb;
-      font-family: Consolas, monospace;
-      font-size: 0.82rem;
-      min-width: 70px;
-      text-align: right;
-    }
-
-    .btn-icon {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: transparent;
-      color: #b3c1d0;
-      padding: 2px 7px;
-      font-size: 0.75rem;
-      cursor: pointer;
-    }
-
-    .card-body { padding: 6px; }
-    .card-body.collapsed { display: none; }
-    .chart-wrap { position: relative; height: 130px; }
-    .chart-card.expanded .chart-wrap { height: 250px; }
-
-    .recordings-layout {
-      display: grid;
-      grid-template-columns: 300px 1fr;
-      gap: 12px;
-    }
-
-    .list {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: var(--bg-soft);
-      padding: 8px;
-      max-height: calc(100vh - 200px);
-      overflow: auto;
-    }
-
-    .list-item {
-      width: 100%;
-      text-align: left;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--bg-softer);
-      color: var(--text);
-      padding: 8px;
-      margin-bottom: 8px;
-      cursor: pointer;
-    }
-
-    .list-item.active {
-      border-color: #3e6f95;
-      background: #1c3447;
-    }
-
-    .list-item small { color: var(--muted); display: block; margin-top: 4px; }
-
-    .replay-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-
-    .range {
-      width: 220px;
-    }
-
-    @media (max-width: 980px) {
-      .recordings-layout { grid-template-columns: 1fr; }
-      .list { max-height: 220px; }
-      .grid { grid-template-columns: 1fr; }
-    }
-  </style>
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <h1>Exoskeleton Sensor Dashboard</h1>
@@ -215,6 +15,35 @@
   </div>
 
   <section class="panel active" id="panel-live">
+    <div class="live-settings">
+      <div class="setting-group">
+        <label for="frequency-input">Frequency (Hz):</label>
+        <input
+          type="number"
+          id="frequency-input"
+          class="input"
+          min="1"
+          max="1000"
+          step="0.1"
+          style="min-width: 80px"
+        />
+        <span class="muted" id="frequency-display">10</span>
+      </div>
+      <div class="setting-group">
+        <label for="max-points-input">Max Points:</label>
+        <input
+          type="number"
+          id="max-points-input"
+          class="input"
+          min="50"
+          max="5000"
+          step="50"
+          style="min-width: 80px"
+        />
+        <span class="muted" id="max-points-display">300</span>
+      </div>
+    </div>
+
     <div class="toolbar">
       <div class="dot" id="status-dot"></div>
       <span class="status" id="status-text">Connecting...</span>
@@ -228,21 +57,12 @@
   </section>
 
   <section class="panel" id="panel-recordings">
-    <div class="recordings-layout">
-      <div>
-        <div class="toolbar" style="margin-bottom: 8px;">
-          <button class="button" id="refresh-recordings">Refresh</button>
-          <span class="muted" id="recordings-count">0 files</span>
-        </div>
-        <div class="list" id="recordings-list"></div>
-      </div>
-      <div>
-        <div class="replay-toolbar">
+    <div class="replay-toolbar">
           <button class="button" id="replay-play">Play</button>
           <button class="button" id="replay-pause">Pause</button>
           <button class="button" id="replay-reset">Reset</button>
           <label class="muted" for="replay-speed">Speed</label>
-          <select class="input" id="replay-speed" style="min-width: 92px;">
+          <select class="input" id="replay-speed" style="min-width: 92px">
             <option value="0.5">0.5x</option>
             <option value="1" selected>1x</option>
             <option value="2">2x</option>
@@ -250,366 +70,18 @@
           </select>
           <input type="range" class="range" id="replay-scrub" min="0" value="0" />
           <span class="muted" id="replay-info">No recording loaded</span>
-        </div>
-
-        <div class="grid" id="replay-grid"></div>
-      </div>
+          <div class="toolbar-right">
+            <select class="input" id="recording-dropdown">
+              <option value="">Select a recording...</option>
+            </select>
+            <button class="button" id="refresh-recordings-2">Refresh</button>
+          </div>
     </div>
+    <div class="grid" id="replay-grid"></div>
   </section>
 
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script>
-    const CHANNEL_NAMES = ['Angle', 'Pitch 1', 'Pitch Rate 1', 'Pitch 2', 'Pitch Rate 2', 'Input', 'Prediction'];
-    const COLORS = ['#4fc3f7', '#81c784', '#ffb74d', '#f06292', '#ba68c8', '#4db6ac', '#fff176'];
-    const MAX_POINTS    = 300; // rolling window
-
-    function buildDashboard(gridId, keyPrefix) {
-      const grid = document.getElementById(gridId);
-      return CHANNEL_NAMES.map((name, i) => {
-        const color = COLORS[i];
-        const cardId = `${keyPrefix}-${i}`;
-
-        const card = document.createElement('div');
-        card.className = 'chart-card';
-        card.innerHTML = `
-          <div class="card-header">
-            <span class="card-title" style="color:${color}">${name}</span>
-            <span class="card-value" id="val-${cardId}">--</span>
-            <button class="btn-icon" id="exp-${cardId}" title="Expand">Expand</button>
-            <button class="btn-icon" id="col-${cardId}" title="Collapse">Hide</button>
-          </div>
-          <div class="card-body" id="body-${cardId}">
-            <div class="chart-wrap">
-              <canvas id="canvas-${cardId}"></canvas>
-            </div>
-          </div>`;
-        grid.appendChild(card);
-
-        const ctx = document.getElementById(`canvas-${cardId}`).getContext('2d');
-        const chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          datasets: [{
-            data: [],
-            borderColor: color,
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.3,
-            fill: false,
-          }]
-        },
-        options: {
-          animation: false,
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { enabled: false } },
-          scales: {
-            x: { type: 'linear', display: false, grid: { color: '#202b36' } },
-            y: {
-              ticks: { color: '#8e9eb0', maxTicksLimit: 5, font: { size: 10 } },
-              grid: { color: '#202b36' },
-            }
-          }
-        }
-      });
-
-        const expBtn = document.getElementById(`exp-${cardId}`);
-        const colBtn = document.getElementById(`col-${cardId}`);
-        const body = document.getElementById(`body-${cardId}`);
-
-        expBtn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const expanded = card.classList.toggle('expanded');
-          expBtn.textContent = expanded ? 'Contract' : 'Expand';
-          chart.resize();
-        });
-
-        colBtn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          const collapsed = body.classList.toggle('collapsed');
-          colBtn.textContent = collapsed ? 'Show' : 'Hide';
-        });
-
-        card.querySelector('.card-header').addEventListener('click', (event) => {
-          if (event.target.classList.contains('btn-icon')) {
-            return;
-          }
-          colBtn.click();
-        });
-
-        return { cardId, chart };
-      });
-    }
-
-    function pushSample(cards, values, xCounter) {
-      values.forEach((value, i) => {
-        const current = cards[i];
-        if (!current) {
-          return;
-        }
-
-        const dataset = current.chart.data.datasets[0];
-        dataset.data.push({ x: xCounter, y: value });
-        if (dataset.data.length > MAX_POINTS) {
-          dataset.data.shift();
-        }
-
-        const body = document.getElementById(`body-${current.cardId}`);
-        if (!body.classList.contains('collapsed')) {
-          current.chart.update('none');
-        }
-
-        document.getElementById(`val-${current.cardId}`).textContent = Number(value).toFixed(4);
-      });
-    }
-
-    function resetDashboard(cards) {
-      cards.forEach((current) => {
-        current.chart.data.datasets[0].data = [];
-        current.chart.update('none');
-        document.getElementById(`val-${current.cardId}`).textContent = '--';
-      });
-    }
-
-    const liveCards = buildDashboard('live-grid', 'live');
-    const replayCards = buildDashboard('replay-grid', 'replay');
-
-    let liveX = 0;
-    let sampleCount = 0;
-    let freqTimer = performance.now();
-    let freqEst = null;
-    let isRecording = false;
-
-    let replayRecording = null;
-    let replayX = 0;
-    let replayIndex = 0;
-    let replayPlayheadMs = 0;
-    let replayLastFrameMs = 0;
-    let replayRaf = null;
-
-    const socket = io('http://localhost:3000');
-
-    function setTab(tabName) {
-      document.querySelectorAll('.tab-btn').forEach((button) => {
-        button.classList.toggle('active', button.dataset.tab === tabName);
-      });
-
-      document.getElementById('panel-live').classList.toggle('active', tabName === 'live');
-      document.getElementById('panel-recordings').classList.toggle('active', tabName === 'recordings');
-    }
-
-    document.querySelectorAll('.tab-btn').forEach((button) => {
-      button.addEventListener('click', () => setTab(button.dataset.tab));
-    });
-
-    function updateRecordingButton() {
-      const button = document.getElementById('record-btn');
-      const state = document.getElementById('recording-state');
-      button.textContent = isRecording ? 'Stop Recording' : 'Start Recording';
-      button.classList.toggle('danger', isRecording);
-      state.textContent = isRecording ? 'Recording in progress' : 'Not recording';
-    }
-
-    function requestRecordingsList() {
-      socket.emit('recordings:list', {}, (response) => {
-        if (!response || !response.ok) {
-          return;
-        }
-        renderRecordingsList(response.recordings || []);
-      });
-    }
-
-    function renderRecordingsList(recordings) {
-      const list = document.getElementById('recordings-list');
-      list.innerHTML = '';
-      document.getElementById('recordings-count').textContent = `${recordings.length} files`;
-
-      recordings.forEach((item) => {
-        const button = document.createElement('button');
-        button.className = 'list-item';
-        button.dataset.fileName = item.fileName;
-        button.innerHTML = `${item.fileName}<small>${new Date(item.modifiedAt).toLocaleString()} | ${Math.round(item.sizeBytes / 1024)} KB</small>`;
-        button.addEventListener('click', () => {
-          document.querySelectorAll('.list-item').forEach((entry) => entry.classList.remove('active'));
-          button.classList.add('active');
-          loadRecording(item.fileName);
-        });
-        list.appendChild(button);
-      });
-    }
-
-    function stopReplayLoop() {
-      if (replayRaf) {
-        cancelAnimationFrame(replayRaf);
-        replayRaf = null;
-      }
-    }
-
-    function replayToIndex(targetIndex) {
-      if (!replayRecording) {
-        return;
-      }
-
-      resetDashboard(replayCards);
-      replayIndex = 0;
-      replayX = 0;
-
-      const finalIndex = Math.max(0, Math.min(targetIndex, replayRecording.samples.length));
-      for (let i = 0; i < finalIndex; i++) {
-        pushSample(replayCards, replayRecording.samples[i].values, replayX);
-        replayX += 1;
-      }
-      replayIndex = finalIndex;
-      document.getElementById('replay-scrub').value = String(replayIndex);
-      document.getElementById('replay-info').textContent = `${replayIndex}/${replayRecording.samples.length} samples`;
-    }
-
-    function replayFrame(nowMs) {
-      if (!replayRecording || replayIndex >= replayRecording.samples.length) {
-        stopReplayLoop();
-        return;
-      }
-
-      const speed = Number(document.getElementById('replay-speed').value || '1');
-      const deltaMs = replayLastFrameMs ? nowMs - replayLastFrameMs : 0;
-      replayLastFrameMs = nowMs;
-      replayPlayheadMs += deltaMs * speed;
-
-      const firstTs = replayRecording.samples[0].timestamp;
-      while (replayIndex < replayRecording.samples.length) {
-        const sample = replayRecording.samples[replayIndex];
-        const sampleOffset = sample.timestamp - firstTs;
-        if (sampleOffset > replayPlayheadMs) {
-          break;
-        }
-        pushSample(replayCards, sample.values, replayX);
-        replayX += 1;
-        replayIndex += 1;
-      }
-
-      document.getElementById('replay-scrub').value = String(replayIndex);
-      document.getElementById('replay-info').textContent = `${replayIndex}/${replayRecording.samples.length} samples`;
-
-      if (replayIndex < replayRecording.samples.length) {
-        replayRaf = requestAnimationFrame(replayFrame);
-      } else {
-        stopReplayLoop();
-      }
-    }
-
-    function replayPlay() {
-      if (!replayRecording || replayRaf) {
-        return;
-      }
-      replayLastFrameMs = performance.now();
-      replayRaf = requestAnimationFrame(replayFrame);
-    }
-
-    function replayPause() {
-      stopReplayLoop();
-    }
-
-    function replayReset() {
-      stopReplayLoop();
-      replayPlayheadMs = 0;
-      replayToIndex(0);
-    }
-
-    function loadRecording(fileName) {
-      socket.emit('recording:get', { fileName }, (response) => {
-        if (!response || !response.ok) {
-          document.getElementById('replay-info').textContent = response?.error || 'Failed to load recording';
-          return;
-        }
-
-        replayRecording = response.recording;
-        replayPlayheadMs = 0;
-        replayToIndex(0);
-
-        const scrub = document.getElementById('replay-scrub');
-        scrub.max = String(replayRecording.samples.length);
-        scrub.value = '0';
-        document.getElementById('replay-info').textContent = `${fileName} | ${replayRecording.samples.length} samples`;
-      });
-    }
-
-    document.getElementById('record-btn').addEventListener('click', () => {
-      if (!isRecording) {
-        const name = document.getElementById('recording-name').value;
-        socket.emit('recording:start', { name }, (response) => {
-          if (!response || !response.ok) {
-            alert(response?.error || 'Failed to start recording');
-          }
-        });
-      } else {
-        socket.emit('recording:stop', {}, (response) => {
-          if (!response || !response.ok) {
-            alert(response?.error || 'Failed to stop recording');
-          }
-        });
-      }
-    });
-
-    document.getElementById('refresh-recordings').addEventListener('click', requestRecordingsList);
-    document.getElementById('replay-play').addEventListener('click', replayPlay);
-    document.getElementById('replay-pause').addEventListener('click', replayPause);
-    document.getElementById('replay-reset').addEventListener('click', replayReset);
-
-    document.getElementById('replay-scrub').addEventListener('input', (event) => {
-      stopReplayLoop();
-      replayToIndex(Number(event.target.value));
-      if (replayRecording && replayRecording.samples.length > 0) {
-        const firstTs = replayRecording.samples[0].timestamp;
-        const idx = Math.max(0, Math.min(replayIndex - 1, replayRecording.samples.length - 1));
-        replayPlayheadMs = replayRecording.samples[idx].timestamp - firstTs;
-      }
-    });
-
-    socket.on('connect', () => {
-      document.getElementById('status-dot').className = 'dot connected';
-      document.getElementById('status-text').textContent = 'Connected';
-    });
-
-    socket.on('disconnect', () => {
-      document.getElementById('status-dot').className = 'dot disconnected';
-      document.getElementById('status-text').textContent = 'Disconnected';
-      document.getElementById('freq-display').textContent = '';
-    });
-
-    socket.on('recording:status', (status) => {
-      isRecording = !!status.isRecording;
-      updateRecordingButton();
-    });
-
-    socket.on('recordings:list', (recordings) => {
-      if (Array.isArray(recordings)) {
-        renderRecordingsList(recordings);
-      }
-    });
-
-    socket.on('sensor-data', (packet) => {
-      sampleCount++;
-      const now = performance.now();
-      const dt = now - freqTimer;
-      if (dt >= 1000) {
-        const hz = (sampleCount / dt) * 1000;
-        freqEst = freqEst === null ? hz : freqEst * 0.7 + hz * 0.3;
-        document.getElementById('freq-display').textContent = `${freqEst.toFixed(1)} Hz`;
-        sampleCount = 0;
-        freqTimer = now;
-      }
-
-      if (!packet || !Array.isArray(packet.values)) {
-        return;
-      }
-
-      pushSample(liveCards, packet.values, liveX);
-      liveX += 1;
-    });
-
-    updateRecordingButton();
-    requestRecordingsList();
-  </script>
+  <script src="js/app.js"></script>
 </body>
 </html>
