@@ -163,7 +163,6 @@ def train_model(model: keras.Model, name: str,
     X_val,   y_val   = val_data
     X_test,  y_test  = test_data
 
-    # ── Per-model output folder:  NN/cnn/  or  NN/dense/ ──────────────────
     out_dir = os.path.join(BASE_DIR, name)
     os.makedirs(out_dir, exist_ok=True)
 
