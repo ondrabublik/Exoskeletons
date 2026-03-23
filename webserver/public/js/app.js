@@ -1,5 +1,5 @@
-const ip = '192.168.30.86';
-// const ip = '10.255.57.209';
+// const ip = '192.168.30.86';
+const ip = '10.255.57.209';
 
 // Configuration
 const SERIES_NAMES = [
@@ -611,6 +611,57 @@ document.getElementById('files-clear-all').addEventListener('click', () => {
       alert(response?.error || 'Failed to clear recordings');
     }
   });
+});
+
+// ── File upload ────────────────────────────────────────────────────────────────
+async function uploadFiles(fileList) {
+  const statusEl = document.getElementById('upload-status');
+  if (!fileList || fileList.length === 0) return;
+
+  const csvFiles = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.csv'));
+  if (csvFiles.length === 0) {
+    statusEl.textContent = 'No .csv files selected.';
+    return;
+  }
+
+  statusEl.textContent = `Uploading ${csvFiles.length} file${csvFiles.length > 1 ? 's' : ''}…`;
+
+  const formData = new FormData();
+  csvFiles.forEach((f) => formData.append('files', f));
+
+  try {
+    const response = await fetch('/api/recordings/upload', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.ok) {
+      statusEl.textContent = `Uploaded: ${result.uploaded.join(', ')}`;
+      requestRecordingsList();
+    } else {
+      statusEl.textContent = `Upload failed: ${result.error || 'Unknown error'}`;
+    }
+  } catch (err) {
+    statusEl.textContent = `Upload error: ${err.message}`;
+  }
+}
+
+document.getElementById('upload-browse').addEventListener('click', () => {
+  document.getElementById('upload-input').click();
+});
+
+document.getElementById('upload-input').addEventListener('change', (e) => {
+  uploadFiles(e.target.files);
+  e.target.value = '';
+});
+
+const uploadArea = document.getElementById('upload-area');
+uploadArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  uploadArea.classList.add('drag-over');
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  uploadFiles(e.dataTransfer.files);
 });
 
 

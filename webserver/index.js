@@ -3,10 +3,41 @@ const dgram = require('dgram');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const { Server } = require('socket.io');
 
 const app = express();
 app.use(express.static('public'));
+
+// File upload route
+const upload = multer({
+	storage: multer.diskStorage({
+		destination: (_req, _file, cb) => cb(null, RECORDINGS_DIR),
+		filename: (_req, file, cb) => {
+			const safeName = path.basename(file.originalname || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+			if (!safeName.toLowerCase().endsWith('.csv')) {
+				return cb(new Error('Only .csv files are allowed'));
+			}
+			cb(null, safeName);
+		}
+	}),
+	fileFilter: (_req, file, cb) => {
+		if (!file.originalname.toLowerCase().endsWith('.csv')) {
+			return cb(new Error('Only .csv files are allowed'));
+		}
+		cb(null, true);
+	},
+	limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
+});
+
+app.post('/api/recordings/upload', upload.array('files'), (req, res) => {
+	const uploaded = (req.files || []).map((f) => f.filename);
+	res.json({ ok: true, uploaded });
+});
+
+app.use((err, _req, res, _next) => {
+	res.status(400).json({ ok: false, error: err.message });
+});
 
 // File download route
 app.get('/api/recordings/:fileName', (req, res) => {

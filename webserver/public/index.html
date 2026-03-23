@@ -101,6 +101,11 @@
       <button class="button" id="files-download-all">Download All</button>
       <button class="button danger" id="files-clear-all">Clear All</button>
     </div>
+    <div class="upload-area" id="upload-area">
+      <input type="file" id="upload-input" accept=".csv" multiple hidden />
+      <span class="upload-label">Drop .csv files here or <button class="button" id="upload-browse">Browse</button></span>
+      <span class="muted" id="upload-status"></span>
+    </div>
     <div class="files-table-wrap">
       <table class="files-table">
         <thead>

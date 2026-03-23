@@ -288,6 +288,29 @@ h1 {
 
 /* ── File manager ────────────────────────────────────────────── */
 
+.upload-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border: 2px dashed var(--line);
+  border-radius: 8px;
+  background: #0d151e;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: default;
+}
+
+.upload-area.drag-over {
+  border-color: var(--accent);
+  background: #0c2030;
+}
+
+.upload-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .files-table-wrap {
   border: 1px solid var(--line);
   border-radius: 10px;
