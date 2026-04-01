@@ -70,9 +70,9 @@ const float angleMax = 0.8f;
 const int MUSCLE_BUTTON_PIN = 19;
 
 // servo pin (PWM)
-const int SERVO_PIN = 12;
-const int lock = 0;
-const int unlock = 90;
+const int SERVO_PIN = 2;
+const int lock = 90;
+const int unlock = 0;
 Servo doorServo;
 
 // motor pin (PWM)
@@ -81,7 +81,7 @@ const int MOTOR_PWM_FREQ = 2000;
 const int MOTOR_PWM_RESOLUTION = 10;
 const int MOTOR_PWM_CHANNEL = 1;
 // Nastavitelná intenzita motoru v rozsahu 0..1
-const float MOTOR_INTENSITY = 1.0f;
+const float MOTOR_INTENSITY = 0.3f;
 
 // LED na D3 (GPIO0)
 const int LED_PIN = 4;
