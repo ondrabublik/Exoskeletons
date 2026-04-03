@@ -55,6 +55,9 @@ NN/*.svg
 NN/logs/
 NN/runs/
 
+# ── NN – Optuna study database ────────────────────────────────────────────────
+NN/optuna_studies.db
+
 # ── macOS artefacts ───────────────────────────────────────────────────────────
 .DS_Store
 .AppleDouble
