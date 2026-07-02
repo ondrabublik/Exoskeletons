@@ -54,7 +54,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     X_lstm, y, test_size=0.2, random_state=RANDOM_SEED
 )
 
-# ====== LSTM model ======
+# ====== CNN model ======
 model = tf.keras.Sequential([
     tf.keras.layers.Input(shape=(7,1)),
     tf.keras.layers.Conv1D(16,3,activation="relu"),

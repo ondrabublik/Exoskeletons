@@ -123,7 +123,7 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
     ax0 = fig.add_subplot(gs[0])
     ax1 = fig.add_subplot(gs[1], sharex=ax0)
     ax2 = fig.add_subplot(gs[2], sharex=ax0)
-    ax3 = fig.add_subplot(gs[3], sharex=ax0)   # overlay panel
+    ax3 = fig.add_subplot(gs[3], sharex=ax0)
 
     # ── helper ────────────────────────────────────────────────────────────
     def _simple(ax, values, ylabel, color):
@@ -134,7 +134,7 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
 
     _simple(ax0, df["angle"].values,  "Angle",   "#2196F3")
     _simple(ax1, df["Pitch1"].values, "Pitch 1", "#FF9800")
-    _simple(ax2, df["Pitch2"].values, "Pitch 2", "#4CAF50")
+    _simple(ax2, df["PitchRate1"].values, "Omega 1", "#4CAF50")
 
     # ── overlay panel ─────────────────────────────────────────────────────
     label_vals = df["label"].values.astype(float)
@@ -144,16 +144,16 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
     ax3.fill_between(t, 0, 1,
                      where=(label_vals > 0.5),
                      transform=ax3.get_xaxis_transform(),
-                     alpha=0.20, color="#4CAF50", label="Label ON (ground truth)")
+                     alpha=0.70, color="#4CAF50", label="label ON")
 
     # angle on left axis
-    ax3.plot(t, angle_vals, color="#2196F3", lw=1.2, alpha=0.9, label="Angle")
-    ax3.set_ylabel("Angle", fontsize=9, color="#2196F3")
-    ax3.tick_params(axis="y", colors="#2196F3")
+    # ax3.plot(t, angle_vals, color="#2196F3", lw=1.2, alpha=0.9, label="Angle")
+    # ax3.set_ylabel("Angle", fontsize=9, color="#2196F3")
+    # ax3.tick_params(axis="y", colors="#2196F3")
 
     # prediction probability on right axis
     ax3_r = ax3.twinx()
-    ax3_r.plot(t, predictions, color="#9C27B0", lw=1.5, alpha=0.9, label="P(ON) predicted")
+    ax3_r.plot(t, predictions, color="#9C27B0", lw=1.5, alpha=0.9, label="predicted")
     ax3_r.fill_between(t, 0, predictions, alpha=0.15, color="#9C27B0")
     ax3_r.set_ylim(-0.05, 1.05)
     ax3_r.set_ylabel("P(ON)", fontsize=9, color="#9C27B0")
@@ -166,7 +166,7 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
     lines_l, labels_l = ax3.get_legend_handles_labels()
     lines_r, labels_r = ax3_r.get_legend_handles_labels()
     ax3.legend(lines_l + lines_r, labels_l + labels_r,
-               fontsize=8, loc="upper right", framealpha=0.85)
+               fontsize=8, loc="upper left", framealpha=0.85)
 
     # hide x tick labels on top 3 panels
     plt.setp(ax0.get_xticklabels(), visible=False)
@@ -182,7 +182,7 @@ def _plot_results(df_raw: pd.DataFrame, predictions: np.ndarray,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=["dense", "cnn"], default="cnn")
-    parser.add_argument("--file",  default=os.path.join("DATA", "c:\\Users\\vaclav.heidler\\Downloads\\2026-03-21T15-10-41-489Z_predicted.csv"))
+    parser.add_argument("--file",  default=os.path.join("DATA", "D:\\Soubory2\\exoskeleton\\Exoskeletons\\NN\\DATA\\2026-03-21T19-10-07-178Z.csv"))
     parser.add_argument("--threshold", type=float, default=0.6)
     args = parser.parse_args()
     stream_predict(args.model, args.file, args.threshold)

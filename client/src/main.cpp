@@ -32,7 +32,7 @@ TfLiteTensor* output = nullptr;
 bool predictionEnabled = true;  // false = bez neuronové sítě
 
 // Buffer pro časovou historii vstupů do NN
-constexpr int kNnChannels = 5;       // angle, roll1, gx1, roll2, gx2
+constexpr int kNnChannels = 7;       // angle, c1, s1, gx1, c2, s2, gx2
 constexpr int kNnBufferLength = 10;  // volitelná délka bufferu
 float nnInputBuffer[kNnChannels][kNnBufferLength] = {0.0f};
 int nnSamplesCollected = 0;
@@ -56,13 +56,14 @@ WiFiUDP Udp;
 
 // Příznak pro komunikaci
 bool outCommunication = true;  // false = bez WiFi a bez odesílání
-float dataPayload[7];
+float dataPayload[9];
 // _________________ wifi, UDP ______________________________________________
 
 // __________ potenciometer, motor, button, servo __________________________
 // pin potenciometru
 const int POT_PIN = 35;
 float angleValue = 0;
+float potStartupOffset = 0;
 const float angleMin = 0.13f;
 const float angleMax = 0.8f;
 
@@ -107,10 +108,34 @@ const unsigned long logicPeriod = 100000;  // 100 ms v mikrosekundách
 TaskHandle_t task1Handle = NULL;
 TaskHandle_t task2Handle = NULL;
 
+static bool initMpuWithRetry(Adafruit_MPU6050& mpu, uint8_t address, const char* name) {
+  constexpr int kInitAttempts = 5;
+  constexpr uint32_t kRetryDelayMs = 500;
+  for (int attempt = 1; attempt <= kInitAttempts; ++attempt) {
+    if (mpu.begin(address)) {
+      Serial.printf("%s inicializovan na pokus %d\n", name, attempt);
+      return true;
+    }
+    Serial.printf("%s init selhal (pokus %d/%d)\n", name, attempt, kInitAttempts);
+    delay(kRetryDelayMs);
+  }
+  Serial.printf("%s nenalezen po %d pokusech.\n", name, kInitAttempts);
+  return false;
+}
+
 static uint32_t motorIntensityToDuty(float intensity) {
   float clamped = constrain(intensity, 0.0f, 1.0f);
   float maxDuty = (1 << MOTOR_PWM_RESOLUTION) - 1;
   return (uint32_t)(clamped * maxDuty);
+}
+
+static float normalizeGyro(float gxDegPerSec) {
+  return (gxDegPerSec + 100.0f) / 200.0f;
+}
+
+static float normalizeTrig01(float value) {
+  float clamped = constrain(value, -1.0f, 1.0f);
+  return (clamped + 1.0f) * 0.5f;
 }
 
 void setup() {
@@ -149,18 +174,9 @@ void setup() {
   Wire.setClock(400000);   // rychlejší I2C
   Wire.setTimeout(3000);
 
-  // inicializace prvního senzoru (0x68)
-  if (mpu1.begin(0x68)) {
-    mpu1_ok = true;
-  } else {
-    Serial.println("MPU1 nenalezen!");
-  }
-
-  if (mpu2.begin(0x69)) {
-    mpu2_ok = true;
-  } else {
-    Serial.println("MPU2 nenalezen!");
-  }
+  // inicializace senzorů s retry (pomáhá při pomalejším náběhu po bootu)
+  mpu1_ok = initMpuWithRetry(mpu1, 0x68, "MPU1");
+  mpu2_ok = initMpuWithRetry(mpu2, 0x69, "MPU2");
   if (!mpu1_ok && !mpu2_ok) {
     Serial.println("Zadny MPU6050 nenalezen - IMU data budou nulova.");
   }
@@ -183,6 +199,16 @@ void setup() {
   // LED pin
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  // Kratka kalibrace potenciometru po startu (referencni offset)
+  constexpr int kPotCalibrationSamples = 16;
+  float potSum = 0.0f;
+  for (int i = 0; i < kPotCalibrationSamples; ++i) {
+    potSum += analogRead(POT_PIN) / 4096.0f;
+    delay(5);
+  }
+  potStartupOffset = potSum / kPotCalibrationSamples;
+  Serial.printf("Potenciometr offset pri startu: %.4f\n", potStartupOffset);
+
   pinMode(MOTOR_PIN, OUTPUT);
   ledcSetup(MOTOR_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_RESOLUTION);
   ledcAttachPin(MOTOR_PIN, MOTOR_PWM_CHANNEL);
@@ -330,21 +356,35 @@ void task2Logic(void *pvParameters) {
 
 
       // čtení potenciometru
-      angleValue = analogRead(POT_PIN) / 4096.0;  // normalizace na 0.0 - 1.0 (předpoklad, že potenciometr je zapojen jako dělič napětí)
+      angleValue = (analogRead(POT_PIN) / 4096.0f) - potStartupOffset;  // aktualni hodnota minus offset pri zapnuti
 
       // čtení muscle button
       float muscleButton = digitalRead(MUSCLE_BUTTON_PIN) ? 1.0 : 0.0;  // 1.0 stisknuto, 0.0 nestisknuto
 
-      float roll1 = atan2(ay1, ax1) * 57.2958f;
-      float roll2 = atan2(ay2, ax2) * 57.2958f;
+      float norm1 = sqrtf(ax1 * ax1 + ay1 * ay1);
+      float norm2 = sqrtf(ax2 * ax2 + ay2 * ay2);
+      float c1 = 0.0f;
+      float s1 = 0.0f;
+      float c2 = 0.0f;
+      float s2 = 0.0f;
+      if (norm1 > 1e-6f) {
+        c1 = ax1 / norm1;
+        s1 = ay1 / norm1;
+      }
+      if (norm2 > 1e-6f) {
+        c2 = ax2 / norm2;
+        s2 = ay2 / norm2;
+      }
 
       // normalizované vstupy (kanály)
       float nnChannels[kNnChannels];
       nnChannels[0] = angleValue;
-      nnChannels[1] = (roll1 / 360.f + 0.5f) * 2.0f;
-      nnChannels[2] = (gx1 + 100.0f) / 200.0f;
-      nnChannels[3] = (roll2 / 360.0f + 0.5f) * 2.0f;
-      nnChannels[4] = (gx2 + 100.0f) / 200.0f;
+      nnChannels[1] = normalizeTrig01(c1);
+      nnChannels[2] = normalizeTrig01(s1);
+      nnChannels[3] = normalizeGyro(gx1);
+      nnChannels[4] = normalizeTrig01(c2);
+      nnChannels[5] = normalizeTrig01(s2);
+      nnChannels[6] = normalizeGyro(gx2);
 
       // posun bufferu doleva a vložení nového vzorku na konec
       for (int ch = 0; ch < kNnChannels; ch++) {
@@ -365,11 +405,6 @@ void task2Logic(void *pvParameters) {
         const int nnInputCount = kNnChannels * kNnBufferLength;
         if (input && input->bytes >= nnInputCount * (int)sizeof(float) && nnSamplesCollected >= kNnBufferLength) {
           int idx = 0;
-          // for (int ch = 0; ch < kNnChannels; ch++) {
-          //   for (int i = 0; i < kNnBufferLength; i++) {
-          //     input->data.f[idx++] = nnInputBuffer[ch][i];
-          //   }
-          // }
           for (int i = 0; i < kNnBufferLength; i++) {
             for (int ch = 0; ch < kNnChannels; ch++) {
               input->data.f[idx++] = nnInputBuffer[ch][i];
@@ -398,14 +433,16 @@ void task2Logic(void *pvParameters) {
       }
 
       if (outCommunication) {
-        // 7 hodnot pro binární packet float[7]
+        // 9 hodnot pro binární packet float[9]
         dataPayload[0] = angleValue;
-        dataPayload[1] =  (roll1 / 360.f + 0.5f) * 2.0f;
-        dataPayload[2] = (gx1 + 100.0) / 200.0;
-        dataPayload[3] = (roll2 / 360.0f + 0.5f) * 2.0f;
-        dataPayload[4] = (gx2 + 100.0) / 200.0;
-        dataPayload[5] = muscleButton;
-        dataPayload[6] = prediction;
+        dataPayload[1] = normalizeTrig01(c1);
+        dataPayload[2] = normalizeTrig01(s1);
+        dataPayload[3] = normalizeGyro(gx1);
+        dataPayload[4] = normalizeTrig01(c2);
+        dataPayload[5] = normalizeTrig01(s2);
+        dataPayload[6] = normalizeGyro(gx2);
+        dataPayload[7] = muscleButton;
+        dataPayload[8] = prediction;
       }
     }
     vTaskDelay(1 / portTICK_PERIOD_MS);  // Krátká pauza
