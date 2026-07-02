@@ -6,26 +6,27 @@ from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
 from scipy import ndimage
 
+
 def filter_short_pulses(predictions, min_duration_samples=10, min_gap_samples=5):
     """Odstraní krátké impulsy kratší než min_duration_samples"""
     # 1. Odstraň krátké zapnutí (původní logika)
     labeled, num_features = ndimage.label(predictions)
     filtered = predictions.copy()
-    
+
     for i in range(1, num_features + 1):
         component = labeled == i
         if component.sum() < min_duration_samples:
             filtered[component] = 0
-    
+
     # 2. Odstraň krátké mezery (invertuj, filtruj, invertuj zpět)
     inverted = 1 - filtered
     labeled_gaps, num_gaps = ndimage.label(inverted)
-    
+
     for i in range(1, num_gaps + 1):
         component = labeled_gaps == i
         if component.sum() < min_gap_samples:
             filtered[component] = 1  # krátkou mezeru "přemostí" na 1
-    
+
     return filtered
 
 # ===============================
@@ -38,7 +39,7 @@ def filter_short_pulses(predictions, min_duration_samples=10, min_gap_samples=5)
 # KQNVDOFY nepotřebujeme
 # DJYZLQAB je fajn
 script_dir = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.join(script_dir, "data", "DJYZLQAB.TXT")
+data_path = os.path.join(script_dir, "data", "KSTHKRWQ.TXT")
 data = np.loadtxt(data_path, delimiter=",")
 #data = np.loadtxt("data/KSTHKRWQ.TXT", delimiter=",")
 
@@ -64,23 +65,76 @@ X_train, X_test, y_train, y_test = train_test_split(
 # ===============================
 # 4) MLP model
 # ===============================
+# Původní verze:
+# model = tf.keras.Sequential([
+#     tf.keras.layers.Input(shape=(7,)),
+#     tf.keras.layers.Dense(32, activation="relu"),
+#     tf.keras.layers.Dense(16, activation="relu"),
+#     tf.keras.layers.Dense(1, activation="sigmoid")
+# ])
+#
+# model.compile(
+#     optimizer="adam",
+#     loss="binary_crossentropy",
+#     metrics=["accuracy"]
+# )
+#
+# model.fit(X_train, y_train, epochs=10, verbose=0)
+
+
+
+# Verze 1 podle Optuna výsledků
+units_1 = 96
+units_2 = 32
+learning_rate = 0.0027522588082931057
+dropout = 0.2
+epochs = 21
+batch_size = 32
+
+# Verze 2 podle Optuna výsledků
+'''
+units_1 = 64
+units_2 = 48
+learning_rate = 0.006702888624658378
+dropout = 0.15
+epochs = 27
+batch_size = 32
+'''
+
 model = tf.keras.Sequential([
     tf.keras.layers.Input(shape=(7,)),
-    tf.keras.layers.Dense(32, activation="relu"),
-    tf.keras.layers.Dense(16, activation="relu"),
+    tf.keras.layers.Dense(units_1, activation="relu"),
+    tf.keras.layers.Dropout(dropout),
+    tf.keras.layers.Dense(units_2, activation="relu"),
+    tf.keras.layers.Dropout(dropout / 2),
     tf.keras.layers.Dense(1, activation="sigmoid")
 ])
 
 model.compile(
-    optimizer="adam",
+    optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     loss="binary_crossentropy",
     metrics=["accuracy"]
 )
 
-model.fit(X_train, y_train, epochs=10, verbose=0)
+model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
 
 # ===============================
-# 5) Predikce na trénovacích datech
+# 5) Vyhodnocení na testovací množině
+# ===============================
+y_test_pred_prob = model.predict(X_test).ravel()
+y_test_pred = (y_test_pred_prob >= 0.5).astype(int)
+
+accuracy = np.mean(y_test_pred == y_test)
+loss = model.evaluate(X_test, y_test, verbose=0)[0]
+
+print("\n=== Vyhodnocení modelu ===")
+print(f"Test accuracy: {accuracy:.4f}")
+print(f"Test loss: {loss:.4f}")
+#print("Test prediction:", y_test_pred)
+#print("True labels:", y_test)
+
+# ===============================
+# 6) Predikce na trénovacích datech
 # ===============================
 y_pred_prob = model.predict(X_scaled).ravel()
 y_pred = (y_pred_prob >= 0.5).astype(int)
@@ -92,7 +146,7 @@ print("\n=== Predikce modelu ===")
 print(y_pred_filtered)
 
 # ===============================
-# 6) Vykreslení subplotů
+# 7) Vykreslení subplotů
 # ===============================
 num_signals = 7
 
